@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const supabase = require('../lib/supabase')
-const { provisionNumber, configureInboundAgent } = require('../lib/bland')
+const { onboardClient } = require('../lib/bland')
 const { sendSMS } = require('../lib/sms')
 
 // Simple API key auth for admin routes
@@ -53,25 +53,20 @@ router.post('/clients', requireAdminKey, async (req, res) => {
   }
 
   try {
-    // Provision Bland number
-    const numberResult = await provisionNumber()
-    if (!numberResult.success) {
-      return res.status(500).json({ error: 'Failed to provision phone number', details: numberResult.error })
-    }
-
-    const blandNumber = numberResult.number
-
-    // Configure Bland agent
-    const agentResult = await configureInboundAgent(blandNumber, {
-      businessName: business_name,
-      ownerMobile: owner_mobile,
-      businessType: business_type || 'clinic',
-      afterHoursMessage: after_hours_message
+    // Run full onboarding pipeline (provision number + create agent)
+    const result = await onboardClient({
+      business_name,
+      owner_mobile,
+      business_type,
+      after_hours_message
     })
 
-    if (!agentResult.success) {
-      return res.status(500).json({ error: 'Failed to configure AI agent', details: agentResult.error })
+    if (!result.success) {
+      return res.status(500).json({ error: 'Onboarding failed', details: result.error })
     }
+
+    const blandNumber = result.phone_number
+    const agentId = result.agent_id
 
     // Save to Supabase
     const { data: client, error } = await supabase
@@ -79,6 +74,7 @@ router.post('/clients', requireAdminKey, async (req, res) => {
       .insert({
         business_name,
         bland_number: blandNumber,
+        bland_agent_id: agentId,
         owner_mobile,
         notify_sms: owner_mobile,
         notify_email,
@@ -94,12 +90,16 @@ router.post('/clients', requireAdminKey, async (req, res) => {
     }
 
     // Send welcome SMS
-    await sendSMS(owner_mobile, `Welcome to Callm8! Your number is ${blandNumber}. Share it with your customers and we'll handle every call you miss. — Callm8`)
+    await sendSMS(
+      owner_mobile,
+      `Welcome to Callm8! Your number is ${blandNumber}. Share it with your customers and we'll handle every call you miss. — Callm8`
+    )
 
     res.json({
       success: true,
       client,
       bland_number: blandNumber,
+      agent_id: agentId,
       message: `Client onboarded successfully. Number: ${blandNumber}`
     })
 
