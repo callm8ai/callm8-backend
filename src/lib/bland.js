@@ -5,8 +5,9 @@ const BLAND_BASE = 'https://api.bland.ai/v1'
 // 🔒 Toggle this OFF when going live
 const DISABLE_PROVISIONING = true
 
+// ✅ FIXED HEADERS (CRITICAL)
 const headers = () => ({
-  Authorization: `Bearer ${process.env.BLAND_API_KEY}`,
+  authorization: process.env.BLAND_API_KEY,
   'Content-Type': 'application/json'
 })
 
@@ -109,6 +110,16 @@ ${afterHoursMessage ? `After hours message: ${afterHoursMessage}` : ''}`
 
   const cleanNumber = phoneNumber.replace(/\+/g, '').replace(/\s/g, '')
 
+  // ✅ DEBUG LOGS (VERY IMPORTANT)
+  const webhookUrl = `${process.env.RAILWAY_PUBLIC_DOMAIN}/webhooks/bland`
+
+  console.log("📡 Webhook URL:", webhookUrl)
+  console.log("📦 Sending to Bland:", {
+    phoneNumber,
+    businessName,
+    ownerMobile
+  })
+
   try {
     const response = await axios.post(
       `${BLAND_BASE}/inbound/${cleanNumber}`,
@@ -119,7 +130,7 @@ ${afterHoursMessage ? `After hours message: ${afterHoursMessage}` : ''}`
         max_duration: 4,
         record: true,
         transfer_phone_number: ownerMobile,
-        webhook: `${process.env.RAILWAY_PUBLIC_DOMAIN}/webhooks/bland`,
+        webhook: webhookUrl,
         summary_prompt: `Summarise this call in 2-3 sentences. Include: caller name, reason for call, any urgency, and preferred callback time if mentioned.`
       },
       { headers: headers() }
@@ -127,7 +138,7 @@ ${afterHoursMessage ? `After hours message: ${afterHoursMessage}` : ''}`
 
     console.log('Bland configure response:', JSON.stringify(response.data))
 
-    // 🚨 HARD CHECK (prevents silent persona failure)
+    // 🚨 HARD CHECK
     if (!response.data || response.data.error) {
       throw new Error("Bland failed to configure agent")
     }
@@ -146,7 +157,6 @@ ${afterHoursMessage ? `After hours message: ${afterHoursMessage}` : ''}`
 ========================= */
 async function onboardClient(rawData) {
 
-  // ✅ NORMALISE INPUT (VERY IMPORTANT)
   const clientConfig = {
     businessName: rawData.business_name,
     ownerMobile: rawData.owner_mobile,
@@ -163,7 +173,7 @@ async function onboardClient(rawData) {
     throw new Error("Failed to provision phone number")
   }
 
-  // 2️⃣ Configure agent (persona)
+  // 2️⃣ Configure agent
   const agentResult = await configureInboundAgent(
     numberResult.number,
     clientConfig
@@ -173,7 +183,6 @@ async function onboardClient(rawData) {
     throw new Error("Failed to configure AI agent")
   }
 
-  // 3️⃣ RETURN SUCCESS (you will save to DB in your route)
   return {
     success: true,
     phone_number: numberResult.number,
