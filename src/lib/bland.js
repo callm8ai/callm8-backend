@@ -111,7 +111,7 @@ ${afterHoursMessage ? `After hours message: ${afterHoursMessage}` : ''}`
   const cleanNumber = phoneNumber.replace(/\+/g, '').replace(/\s/g, '')
 
   // ✅ DEBUG LOGS (VERY IMPORTANT)
-  const webhookUrl = `${process.env.RAILWAY_PUBLIC_DOMAIN}/webhooks/bland`
+  const webhookUrl = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/webhooks/bland`
 
   console.log("📡 Webhook URL:", webhookUrl)
   console.log("📦 Sending to Bland:", {
