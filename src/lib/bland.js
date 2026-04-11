@@ -10,12 +10,44 @@ const headers = () => ({
 // Provision a new phone number for a client
 async function provisionNumber() {
   try {
-    const response = await axios.post(
-      `${BLAND_BASE}/inbound/purchase`,
-      {},
-      { headers: headers() }
-    )
-    console.log('Bland provision response:', JSON.stringify(response.data))
+    async function provisionNumber() {
+  const attempts = [
+    { country: "AU" },
+    { country: "US" }
+  ]
+
+  for (const attempt of attempts) {
+    try {
+      console.log(`Attempting Bland number purchase for: ${attempt.country}`)
+
+      const response = await axios.post(
+        `${BLAND_BASE}/inbound/purchase`,
+        attempt,
+        { headers: headers() }
+      )
+
+      const number =
+        response.data.phone_number ||
+        response.data.number ||
+        response.data.phoneNumber
+
+      return {
+        success: true,
+        number,
+        country: attempt.country
+      }
+
+    } catch (error) {
+      console.log(`Failed ${attempt.country}, trying next...`)
+      continue
+    }
+  }
+
+  return {
+    success: false,
+    error: "Failed to provision number in AU and US"
+  }
+}    console.log('Bland provision response:', JSON.stringify(response.data))
     const number = response.data.phone_number || response.data.number
     return { success: true, number }
   } catch (error) {
