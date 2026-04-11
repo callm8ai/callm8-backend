@@ -104,14 +104,14 @@ If asked about appointments, explain that someone will call them back to confirm
 Keep calls under 3 minutes where possible.
 End the call by confirming you've taken their details and someone will be in touch.
 
-Business: ${businessName}
+Business: ${businessName} 
 Type: ${businessType}
 ${afterHoursMessage ? `After hours message: ${afterHoursMessage}` : ''}`
 
   const cleanNumber = phoneNumber.replace(/\+/g, '').replace(/\s/g, '')
 
   // ✅ DEBUG LOGS (VERY IMPORTANT)
-  const webhookUrl = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/webhooks/bland`
+  const webhookUrl = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/webhooks/bland` 
 
   console.log("📡 Webhook URL:", webhookUrl)
   console.log("📦 Sending to Bland:", {
