@@ -12,13 +12,15 @@ async function provisionNumber() {
   try {
     const response = await axios.post(
       `${BLAND_BASE}/inbound/purchase`,
-      { area_code: '612' }, // Australian Sydney area code
+      {},
       { headers: headers() }
     )
-    return { success: true, number: response.data.phone_number }
+    console.log('Bland provision response:', JSON.stringify(response.data))
+    const number = response.data.phone_number || response.data.number
+    return { success: true, number }
   } catch (error) {
-    console.error('Bland provision number failed:', error.response?.data || error.message)
-    return { success: false, error: error.message }
+    console.error('Bland provision number failed:', JSON.stringify(error.response?.data || error.message))
+    return { success: false, error: JSON.stringify(error.response?.data || error.message) }
   }
 }
 
@@ -30,6 +32,10 @@ async function configureInboundAgent(phoneNumber, clientConfig) {
     businessType = 'clinic',
     afterHoursMessage
   } = clientConfig
+
+  if (!phoneNumber) {
+    return { success: false, error: 'No phone number provided' }
+  }
 
   const prompt = `You are a professional receptionist for ${businessName}, a ${businessType}. 
 
@@ -49,9 +55,12 @@ Business: ${businessName}
 Type: ${businessType}
 ${afterHoursMessage ? `After hours message: ${afterHoursMessage}` : ''}`
 
+  // Strip + and spaces from phone number for URL
+  const cleanNumber = phoneNumber.replace(/\+/g, '').replace(/\s/g, '')
+
   try {
     const response = await axios.post(
-      `${BLAND_BASE}/inbound/${encodeURIComponent(phoneNumber)}`,
+      `${BLAND_BASE}/inbound/${cleanNumber}`,
       {
         prompt,
         voice: 'maya',
@@ -59,18 +68,16 @@ ${afterHoursMessage ? `After hours message: ${afterHoursMessage}` : ''}`
         max_duration: 4,
         record: true,
         transfer_phone_number: ownerMobile,
-        transfer_list: {
-          [ownerMobile]: `Transfer to ${businessName} owner`
-        },
-        webhook: process.env.BLAND_WEBHOOK_URL || `${process.env.RAILWAY_PUBLIC_DOMAIN}/webhooks/bland`,
+        webhook: `${process.env.RAILWAY_PUBLIC_DOMAIN}/webhooks/bland`,
         summary_prompt: `Summarise this call in 2-3 sentences. Include: caller name, reason for call, any urgency, and preferred callback time if mentioned.`
       },
       { headers: headers() }
     )
+    console.log('Bland configure response:', JSON.stringify(response.data))
     return { success: true, data: response.data }
   } catch (error) {
-    console.error('Bland configure agent failed:', error.response?.data || error.message)
-    return { success: false, error: error.message }
+    console.error('Bland configure agent failed:', JSON.stringify(error.response?.data || error.message))
+    return { success: false, error: JSON.stringify(error.response?.data || error.message) }
   }
 }
 
