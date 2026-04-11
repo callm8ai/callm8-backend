@@ -2,6 +2,7 @@ const axios = require('axios')
 
 const BLAND_BASE = 'https://api.bland.ai/v1'
 
+// 🔒 Toggle this OFF when going live
 const DISABLE_PROVISIONING = true
 
 const headers = () => ({
@@ -9,10 +10,12 @@ const headers = () => ({
   'Content-Type': 'application/json'
 })
 
-// Provision a new phone number for a client
+/* =========================
+   PROVISION NUMBER
+========================= */
 async function provisionNumber() {
 
-  // ✅ TEST MODE SAFETY SWITCH (MUST BE FIRST)
+  // 🧪 TEST MODE (prevents charges)
   if (DISABLE_PROVISIONING) {
     console.log("🧪 PROVISIONING DISABLED (test mode)")
 
@@ -24,10 +27,7 @@ async function provisionNumber() {
   }
 
   const attempts = [
-    {
-      country_code: "US",
-      type: "local"
-    }
+    { country_code: "US", type: "local" }
   ]
 
   for (const attempt of attempts) {
@@ -68,7 +68,11 @@ async function provisionNumber() {
     error: "No numbers available"
   }
 }
-// Configure the AI agent for a client's inbound number
+
+
+/* =========================
+   CONFIGURE AGENT (PERSONA)
+========================= */
 async function configureInboundAgent(phoneNumber, clientConfig) {
   const {
     businessName,
@@ -79,6 +83,10 @@ async function configureInboundAgent(phoneNumber, clientConfig) {
 
   if (!phoneNumber) {
     return { success: false, error: 'No phone number provided' }
+  }
+
+  if (!businessName) {
+    return { success: false, error: 'Missing businessName (persona will break)' }
   }
 
   const prompt = `You are a professional receptionist for ${businessName}, a ${businessType}. 
@@ -99,7 +107,6 @@ Business: ${businessName}
 Type: ${businessType}
 ${afterHoursMessage ? `After hours message: ${afterHoursMessage}` : ''}`
 
-  // Strip + and spaces from phone number for URL
   const cleanNumber = phoneNumber.replace(/\+/g, '').replace(/\s/g, '')
 
   try {
@@ -117,12 +124,69 @@ ${afterHoursMessage ? `After hours message: ${afterHoursMessage}` : ''}`
       },
       { headers: headers() }
     )
+
     console.log('Bland configure response:', JSON.stringify(response.data))
+
+    // 🚨 HARD CHECK (prevents silent persona failure)
+    if (!response.data || response.data.error) {
+      throw new Error("Bland failed to configure agent")
+    }
+
     return { success: true, data: response.data }
+
   } catch (error) {
     console.error('Bland configure agent failed:', JSON.stringify(error.response?.data || error.message))
     return { success: false, error: JSON.stringify(error.response?.data || error.message) }
   }
 }
 
-module.exports = { provisionNumber, configureInboundAgent }
+
+/* =========================
+   FULL ONBOARDING PIPELINE
+========================= */
+async function onboardClient(rawData) {
+
+  // ✅ NORMALISE INPUT (VERY IMPORTANT)
+  const clientConfig = {
+    businessName: rawData.business_name,
+    ownerMobile: rawData.owner_mobile,
+    businessType: rawData.business_type,
+    afterHoursMessage: rawData.after_hours_message
+  }
+
+  console.log("🚀 Onboarding client:", clientConfig)
+
+  // 1️⃣ Provision number
+  const numberResult = await provisionNumber()
+
+  if (!numberResult.success) {
+    throw new Error("Failed to provision phone number")
+  }
+
+  // 2️⃣ Configure agent (persona)
+  const agentResult = await configureInboundAgent(
+    numberResult.number,
+    clientConfig
+  )
+
+  if (!agentResult.success) {
+    throw new Error("Failed to configure AI agent")
+  }
+
+  // 3️⃣ RETURN SUCCESS (you will save to DB in your route)
+  return {
+    success: true,
+    phone_number: numberResult.number,
+    agent: agentResult.data
+  }
+}
+
+
+/* =========================
+   EXPORTS
+========================= */
+module.exports = {
+  provisionNumber,
+  configureInboundAgent,
+  onboardClient
+}
