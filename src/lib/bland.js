@@ -11,11 +11,23 @@ const headers = () => ({
 
 // Provision a new phone number for a client
 async function provisionNumber() {
+
+  // ✅ TEST MODE SAFETY SWITCH (MUST BE FIRST)
+  if (DISABLE_PROVISIONING) {
+    console.log("🧪 PROVISIONING DISABLED (test mode)")
+
+    return {
+      success: true,
+      number: "+61400000000",
+      testMode: true
+    }
+  }
+
   const attempts = [
-{
-  country_code: "US",
-  type: "local"
-}
+    {
+      country_code: "US",
+      type: "local"
+    }
   ]
 
   for (const attempt of attempts) {
@@ -31,13 +43,12 @@ async function provisionNumber() {
       console.log("Bland FULL response:", JSON.stringify(res.data))
 
       const number =
-  res.data?.data?.phone_number ||
-  res.data?.phone_number ||
-  res.data?.number ||
-  res.data?.phoneNumber
+        res.data?.data?.phone_number ||
+        res.data?.phone_number ||
+        res.data?.number ||
+        res.data?.phoneNumber
 
       if (!number) {
-        console.log("⚠️ No number in response:", res.data)
         throw new Error("No number returned from Bland")
       }
 
@@ -48,17 +59,13 @@ async function provisionNumber() {
       }
 
     } catch (error) {
-      console.log(
-        "Failed attempt:",
-        attempt,
-        JSON.stringify(error.response?.data || error.message)
-      )
+      console.log("Failed attempt:", attempt, error.response?.data || error.message)
     }
   }
 
   return {
     success: false,
-    error: "No US numbers available in selected area codes"
+    error: "No numbers available"
   }
 }
 // Configure the AI agent for a client's inbound number
