@@ -9,52 +9,43 @@ const headers = () => ({
 
 // Provision a new phone number for a client
 async function provisionNumber() {
-  const attempts = [
-    { country: "AU" },
-    { country: "US" }
-  ]
+  const areaCodes = ["415", "212", "310", "305"]
 
-  for (const attempt of attempts) {
+  for (const area_code of areaCodes) {
     try {
-      console.log(`Attempting Bland number purchase for: ${attempt.country}`)
+      console.log(`Trying Bland with area_code: ${area_code}`)
 
       const res = await axios.post(
         `${BLAND_BASE}/inbound/purchase`,
-        attempt,
+        { area_code },
         { headers: headers() }
       )
 
-      console.log(`Bland response (${attempt.country}):`, res.data)
+      console.log("Bland success:", res.data)
 
       const number =
         res.data.phone_number ||
         res.data.number ||
         res.data.phoneNumber
 
-      if (!number) {
-        throw new Error("No phone number returned from Bland")
-      }
+      if (!number) throw new Error("No number returned")
 
       return {
         success: true,
         number,
-        country: attempt.country
+        area_code
       }
 
     } catch (error) {
-      console.error(
-        `Bland provision failed (${attempt.country}):`,
-        error.response?.data || error.message
-      )
+      console.log("Failed:", area_code, error.response?.data || error.message)
     }
   }
 
   return {
     success: false,
-    error: "Failed to provision number in AU and US"
+    error: "No US numbers available in selected area codes"
   }
-}
-// Configure the AI agent for a client's inbound number
+}// Configure the AI agent for a client's inbound number
 async function configureInboundAgent(phoneNumber, clientConfig) {
   const {
     businessName,
