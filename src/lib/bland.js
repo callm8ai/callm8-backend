@@ -10,10 +10,10 @@ const headers = () => ({
 // Provision a new phone number for a client
 async function provisionNumber() {
   const attempts = [
-    { country_code: "US", area_code: "415" },
-    { country_code: "US", area_code: "212" },
-    { country_code: "US", area_code: "310" },
-    { country_code: "US", area_code: "305" }
+{
+  country_code: "US",
+  type: "local"
+}
   ]
 
   for (const attempt of attempts) {
