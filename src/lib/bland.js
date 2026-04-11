@@ -20,16 +20,22 @@ async function provisionNumber() {
     try {
       console.log(`Attempting Bland number purchase for: ${attempt.country}`)
 
-      const response = await axios.post(
+      const res = await axios.post(
         `${BLAND_BASE}/inbound/purchase`,
         attempt,
         { headers: headers() }
       )
 
+      console.log(`Bland response (${attempt.country}):`, res.data)
+
       const number =
-        response.data.phone_number ||
-        response.data.number ||
-        response.data.phoneNumber
+        res.data.phone_number ||
+        res.data.number ||
+        res.data.phoneNumber
+
+      if (!number) {
+        throw new Error("No phone number returned from Bland")
+      }
 
       return {
         success: true,
@@ -38,10 +44,18 @@ async function provisionNumber() {
       }
 
     } catch (error) {
-      console.log(`Failed ${attempt.country}, trying next...`)
-      continue
+      console.error(
+        `Bland provision failed (${attempt.country}):`,
+        error.response?.data || error.message
+      )
     }
   }
+
+  return {
+    success: false,
+    error: "Failed to provision number in AU and US"
+  }
+}
 
   return {
     success: false,
