@@ -2,6 +2,8 @@ const axios = require('axios')
 
 const BLAND_BASE = 'https://api.bland.ai/v1'
 
+const DISABLE_PROVISIONING = true
+
 const headers = () => ({
   Authorization: `Bearer ${process.env.BLAND_API_KEY}`,
   'Content-Type': 'application/json'
