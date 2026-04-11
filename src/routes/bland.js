@@ -99,11 +99,13 @@ router.post('/', async (req, res) => {
     }
 
     // Send email notification
-    if (client.notify_email) {
-      const subject = `📞 Missed Call — ${callerNumber} | ${client.business_name}`
-      const html = buildCallSummaryEmail(client, callRecord)
-      await sendEmail(client.notify_email, subject, html)
-    }
+console.log("📧 client.notify_email:", client.notify_email)
+
+if (client.notify_email) {
+  const subject = `📞 Missed Call — ${callerNumber} | ${client.business_name}`
+  const html = buildCallSummaryEmail(client, callRecord)
+  await sendEmail(client.notify_email, subject, html)
+}
 
     console.log(`Notifications sent for call ${callId}`)
 
