@@ -3,41 +3,53 @@ const axios = require('axios')
 const BLAND_BASE = 'https://api.bland.ai/v1'
 
 const headers = () => ({
-  authorization: process.env.BLAND_API_KEY,
+  Authorization: `Bearer ${process.env.BLAND_API_KEY}`,
   'Content-Type': 'application/json'
 })
 
 // Provision a new phone number for a client
 async function provisionNumber() {
-  const areaCodes = ["415", "212", "310", "305"]
+  const attempts = [
+    { country_code: "US", area_code: "415" },
+    { country_code: "US", area_code: "212" },
+    { country_code: "US", area_code: "310" },
+    { country_code: "US", area_code: "305" }
+  ]
 
-  for (const area_code of areaCodes) {
+  for (const attempt of attempts) {
     try {
-      console.log(`Trying Bland with area_code: ${area_code}`)
+      console.log("Trying Bland number:", attempt)
 
       const res = await axios.post(
         `${BLAND_BASE}/inbound/purchase`,
-        { area_code },
+        attempt,
         { headers: headers() }
       )
 
-      console.log("Bland success:", res.data)
+      console.log("Bland FULL response:", JSON.stringify(res.data))
 
       const number =
         res.data.phone_number ||
         res.data.number ||
         res.data.phoneNumber
 
-      if (!number) throw new Error("No number returned")
+      if (!number) {
+        console.log("⚠️ No number in response:", res.data)
+        throw new Error("No number returned from Bland")
+      }
 
       return {
         success: true,
         number,
-        area_code
+        used: attempt
       }
 
     } catch (error) {
-      console.log("Failed:", area_code, error.response?.data || error.message)
+      console.log(
+        "Failed attempt:",
+        attempt,
+        JSON.stringify(error.response?.data || error.message)
+      )
     }
   }
 
@@ -45,7 +57,8 @@ async function provisionNumber() {
     success: false,
     error: "No US numbers available in selected area codes"
   }
-}// Configure the AI agent for a client's inbound number
+}
+// Configure the AI agent for a client's inbound number
 async function configureInboundAgent(phoneNumber, clientConfig) {
   const {
     businessName,
