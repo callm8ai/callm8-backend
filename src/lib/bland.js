@@ -9,8 +9,6 @@ const headers = () => ({
 
 // Provision a new phone number for a client
 async function provisionNumber() {
-  try {
-    async function provisionNumber() {
   const attempts = [
     { country: "AU" },
     { country: "US" }
@@ -56,20 +54,6 @@ async function provisionNumber() {
     error: "Failed to provision number in AU and US"
   }
 }
-
-  return {
-    success: false,
-    error: "Failed to provision number in AU and US"
-  }
-}    console.log('Bland provision response:', JSON.stringify(response.data))
-    const number = response.data.phone_number || response.data.number
-    return { success: true, number }
-  } catch (error) {
-    console.error('Bland provision number failed:', JSON.stringify(error.response?.data || error.message))
-    return { success: false, error: JSON.stringify(error.response?.data || error.message) }
-  }
-}
-
 // Configure the AI agent for a client's inbound number
 async function configureInboundAgent(phoneNumber, clientConfig) {
   const {
