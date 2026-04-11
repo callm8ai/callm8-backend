@@ -4,14 +4,20 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 async function sendEmail(to, subject, html) {
   try {
-    const result = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL,
       to,
       subject,
       html
     })
-    console.log(`Email sent to ${to}:`, result.id)
-    return { success: true, id: result.id }
+
+    if (error) {
+      console.error(`Resend error sending to ${to}:`, JSON.stringify(error))
+      return { success: false, error }
+    }
+
+    console.log(`Email sent to ${to}: ${data?.id}`)
+    return { success: true, id: data?.id }
   } catch (error) {
     console.error(`Email failed to ${to}:`, error.message)
     return { success: false, error: error.message }
