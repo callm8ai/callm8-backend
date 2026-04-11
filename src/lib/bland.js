@@ -29,9 +29,10 @@ async function provisionNumber() {
       console.log("Bland FULL response:", JSON.stringify(res.data))
 
       const number =
-        res.data.phone_number ||
-        res.data.number ||
-        res.data.phoneNumber
+  res.data?.data?.phone_number ||
+  res.data?.phone_number ||
+  res.data?.number ||
+  res.data?.phoneNumber
 
       if (!number) {
         console.log("⚠️ No number in response:", res.data)
