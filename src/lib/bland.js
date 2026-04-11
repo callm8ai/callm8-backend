@@ -2,24 +2,21 @@ const axios = require('axios')
 
 const BLAND_BASE = 'https://api.bland.ai/v1'
 
-// 🔒 Toggle this OFF when going live
+// 🔒 Safety switch
 const DISABLE_PROVISIONING = true
 
-// ✅ FIXED HEADERS (CRITICAL)
 const headers = () => ({
   authorization: process.env.BLAND_API_KEY,
   'Content-Type': 'application/json'
 })
 
 /* =========================
-   PROVISION NUMBER
+   PROVISION NUMBER (TEST SAFE)
 ========================= */
 async function provisionNumber() {
 
-  // 🧪 TEST MODE (prevents charges)
   if (DISABLE_PROVISIONING) {
     console.log("🧪 PROVISIONING DISABLED (test mode)")
-
     return {
       success: true,
       number: "+61400000000",
@@ -27,127 +24,102 @@ async function provisionNumber() {
     }
   }
 
-  const attempts = [
-    { country_code: "US", type: "local" }
-  ]
-
-  for (const attempt of attempts) {
-    try {
-      console.log("Trying Bland number:", attempt)
-
-      const res = await axios.post(
-        `${BLAND_BASE}/inbound/purchase`,
-        attempt,
-        { headers: headers() }
-      )
-
-      console.log("Bland FULL response:", JSON.stringify(res.data))
-
-      const number =
-        res.data?.data?.phone_number ||
-        res.data?.phone_number ||
-        res.data?.number ||
-        res.data?.phoneNumber
-
-      if (!number) {
-        throw new Error("No number returned from Bland")
-      }
-
-      return {
-        success: true,
-        number,
-        used: attempt
-      }
-
-    } catch (error) {
-      console.log("Failed attempt:", attempt, error.response?.data || error.message)
-    }
+  const attempt = {
+    country_code: "US",
+    type: "local"
   }
 
-  return {
-    success: false,
-    error: "No numbers available"
+  try {
+    const res = await axios.post(
+      `${BLAND_BASE}/inbound/purchase`,
+      attempt,
+      { headers: headers() }
+    )
+
+    console.log("Bland number response:", res.data)
+
+    const number =
+      res.data?.data?.phone_number ||
+      res.data?.phone_number
+
+    if (!number) throw new Error("No number returned")
+
+    return {
+      success: true,
+      number
+    }
+
+  } catch (err) {
+    console.log("Provision failed:", err.response?.data || err.message)
+
+    return {
+      success: false,
+      error: err.response?.data || err.message
+    }
   }
 }
 
 
 /* =========================
-   CONFIGURE AGENT (PERSONA)
+   CREATE AGENT (NEW MODEL)
 ========================= */
-async function configureInboundAgent(phoneNumber, clientConfig) {
+async function createAgent(clientConfig) {
   const {
     businessName,
-    ownerMobile,
     businessType = 'clinic',
+    ownerMobile,
     afterHoursMessage
   } = clientConfig
 
-  if (!phoneNumber) {
-    return { success: false, error: 'No phone number provided' }
-  }
-
-  if (!businessName) {
-    return { success: false, error: 'Missing businessName (persona will break)' }
-  }
-
-  const prompt = `You are a professional receptionist for ${businessName}, a ${businessType}. 
+  const prompt = `
+You are a professional receptionist for ${businessName}, a ${businessType}.
 
 Your job is to:
-1. Greet callers warmly and professionally
-2. Ask for their name and reason for calling
-3. Take a message if the owner is unavailable
-4. Capture any urgency or callback preferences
-5. Be helpful, friendly and concise
+- Greet callers warmly
+- Ask for name and reason for calling
+- Take messages if owner is unavailable
+- Capture urgency and callback details
+- Keep calls short and professional
 
-Always introduce yourself as the ${businessName} answering service.
-If asked about appointments, explain that someone will call them back to confirm.
-Keep calls under 3 minutes where possible.
-End the call by confirming you've taken their details and someone will be in touch.
+Always say you are the ${businessName} answering service.
+If asked about appointments, say someone will call back.
 
-Business: ${businessName} 
+Business: ${businessName}
 Type: ${businessType}
-${afterHoursMessage ? `After hours message: ${afterHoursMessage}` : ''}`
-
-  const cleanNumber = phoneNumber.replace(/\+/g, '').replace(/\s/g, '')
-
-  // ✅ DEBUG LOGS (VERY IMPORTANT)
-  const webhookUrl = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/webhooks/bland` 
-
-  console.log("📡 Webhook URL:", webhookUrl)
-  console.log("📦 Sending to Bland:", {
-    phoneNumber,
-    businessName,
-    ownerMobile
-  })
+${afterHoursMessage ? `After hours: ${afterHoursMessage}` : ''}
+`
 
   try {
     const response = await axios.post(
-      `${BLAND_BASE}/inbound/${cleanNumber}`,
+      `${BLAND_BASE}/agents`,
       {
+        name: `${businessName} Receptionist`,
         prompt,
         voice: 'maya',
-        language: 'en-AU',
-        max_duration: 4,
-        record: true,
-        transfer_phone_number: ownerMobile,
-        webhook: webhookUrl,
-        summary_prompt: `Summarise this call in 2-3 sentences. Include: caller name, reason for call, any urgency, and preferred callback time if mentioned.`
+        language: 'en-AU'
       },
       { headers: headers() }
     )
 
-    console.log('Bland configure response:', JSON.stringify(response.data))
+    console.log("Agent created:", response.data)
 
-    // 🚨 HARD CHECK
-    if (!response.data || response.data.error) {
-      throw new Error("Bland failed to configure agent")
+    const agentId = response.data?.agent_id
+
+    if (!agentId) throw new Error("No agent_id returned")
+
+    return {
+      success: true,
+      agentId,
+      data: response.data
     }
 
-    return { success: true, data: response.data }
+  } catch (err) {
+    console.log("Agent creation failed:", err.response?.data || err.message)
 
-  } catch (error) {
-    console.error('Bland configure agent failed:', JSON.stringify(error.response?.data || error.message))
-    return { success: false, error: JSON.stringify(error.response?.data || error.message) }
+    return {
+      success: false,
+      error: err.response?.data || err.message
+    }
   }
 }
 
@@ -166,26 +138,25 @@ async function onboardClient(rawData) {
 
   console.log("🚀 Onboarding client:", clientConfig)
 
-  // 1️⃣ Provision number
+  // 1️⃣ Provision number (optional now)
   const numberResult = await provisionNumber()
 
   if (!numberResult.success) {
-    throw new Error("Failed to provision phone number")
+    throw new Error("Failed to provision number")
   }
 
-  // 2️⃣ Configure agent
-  const agentResult = await configureInboundAgent(
-    numberResult.number,
-    clientConfig
-  )
+  // 2️⃣ Create agent (THIS IS THE IMPORTANT PART)
+  const agentResult = await createAgent(clientConfig)
 
   if (!agentResult.success) {
-    throw new Error("Failed to configure AI agent")
+    throw new Error("Failed to create agent")
   }
 
+  // 3️⃣ RETURN CLEAN RESULT
   return {
     success: true,
     phone_number: numberResult.number,
+    agent_id: agentResult.agentId,
     agent: agentResult.data
   }
 }
@@ -196,6 +167,6 @@ async function onboardClient(rawData) {
 ========================= */
 module.exports = {
   provisionNumber,
-  configureInboundAgent,
+  createAgent,
   onboardClient
 }
