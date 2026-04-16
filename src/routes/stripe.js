@@ -10,14 +10,15 @@ const { sendEmail } = require('../lib/email')
 /* =========================
    CREATE CHECKOUT SESSION
    Called by your frontend signup form.
-   Accepts customer details, creates a Stripe
+   Accepts customer details + plan, creates a Stripe
    hosted checkout page and returns the URL.
 
    POST /webhooks/stripe/create-checkout-session
    Body: {
      business_name, owner_mobile, notify_email,
-     business_type, after_hours_message
+     business_type, after_hours_message, plan
    }
+   plan: 'starter' ($99/mo) or 'pro' ($197/mo)
 ========================= */
 router.post('/create-checkout-session', express.json(), async (req, res) => {
   const {
@@ -25,12 +26,24 @@ router.post('/create-checkout-session', express.json(), async (req, res) => {
     owner_mobile,
     notify_email,
     business_type,
-    after_hours_message
+    after_hours_message,
+    plan
   } = req.body
 
   if (!business_name || !owner_mobile || !notify_email) {
     return res.status(400).json({
       error: 'business_name, owner_mobile and notify_email are required'
+    })
+  }
+
+  // Select price ID based on plan
+  const priceId = plan === 'pro'
+    ? process.env.STRIPE_PRICE_ID_PRO
+    : process.env.STRIPE_PRICE_ID_STARTER
+
+  if (!priceId) {
+    return res.status(500).json({
+      error: `No price ID configured for plan: ${plan || 'starter'}`
     })
   }
 
@@ -40,7 +53,7 @@ router.post('/create-checkout-session', express.json(), async (req, res) => {
       mode: 'subscription',
       line_items: [
         {
-          price: process.env.STRIPE_PRICE_ID, // set this in Railway variables
+          price: priceId,
           quantity: 1
         }
       ],
@@ -50,13 +63,14 @@ router.post('/create-checkout-session', express.json(), async (req, res) => {
         owner_mobile,
         notify_email,
         business_type: business_type || 'trades',
-        after_hours_message: after_hours_message || ''
+        after_hours_message: after_hours_message || '',
+        plan: plan || 'starter'
       },
       success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.FRONTEND_URL}/cancel`
     })
 
-    console.log(`Checkout session created: ${session.id} for ${business_name}`)
+    console.log(`Checkout session created: ${session.id} for ${business_name} (${plan || 'starter'})`)
     res.json({ url: session.url })
   } catch (err) {
     console.error('Stripe checkout session error:', err.message)
@@ -117,7 +131,8 @@ async function handleNewClient(session) {
     owner_mobile,
     notify_email,
     business_type,
-    after_hours_message
+    after_hours_message,
+    plan
   } = metadata
 
   if (!business_name || !owner_mobile) {
@@ -125,7 +140,7 @@ async function handleNewClient(session) {
     return
   }
 
-  console.log(`\n🎉 New client onboarding: ${business_name}`)
+  console.log(`\n🎉 New client onboarding: ${business_name} (plan: ${plan || 'starter'})`)
 
   // Check for duplicate — Stripe can fire webhooks more than once
   const { data: existing } = await supabase
@@ -184,7 +199,7 @@ async function handleNewClient(session) {
       business_type: business_type || 'trades',
       stripe_customer_id: session.customer,
       stripe_session_id: session.id,
-      plan: 'starter',
+      plan: plan || 'starter',
       active: true
     })
     .select()
@@ -213,11 +228,11 @@ async function handleNewClient(session) {
     await sendEmail(
       notify_email,
       `Welcome to Callm8 — Your number is ${assignedNumber}`,
-      buildWelcomeEmail(business_name, assignedNumber)
+      buildWelcomeEmail(business_name, assignedNumber, plan || 'starter')
     )
   }
 
-  console.log(`✅ Onboarding complete for ${business_name} | Number: ${assignedNumber}\n`)
+  console.log(`✅ Onboarding complete for ${business_name} | Number: ${assignedNumber} | Plan: ${plan || 'starter'}\n`)
 }
 
 /* =========================
@@ -264,11 +279,14 @@ async function handleCancelledClient(subscription) {
 /* =========================
    WELCOME EMAIL TEMPLATE
 ========================= */
-function buildWelcomeEmail(businessName, blandNumber) {
+function buildWelcomeEmail(businessName, blandNumber, plan) {
+  const planLabel = plan === 'pro' ? 'Pro' : 'Starter'
+
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <div style="background: #0D0D2B; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
         <h1 style="color: #FFFFFF; margin: 0; font-size: 28px;">Welcome to Callm8 👋</h1>
+        <p style="color: #aaa; margin: 8px 0 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">${planLabel} Plan</p>
       </div>
       <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #eee;">
         <p style="color: #333; font-size: 16px;">Hi ${businessName},</p>
