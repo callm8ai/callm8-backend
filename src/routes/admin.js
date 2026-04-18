@@ -1,7 +1,6 @@
 const express = require('express')
 const router = express.Router()
 const supabase = require('../lib/supabase')
-const { onboardClient } = require('../lib/bland')
 const { sendSMS } = require('../lib/sms')
 
 // Simple API key auth for admin routes
@@ -37,14 +36,14 @@ router.get('/clients/:id/calls', requireAdminKey, async (req, res) => {
   res.json({ calls: data })
 })
 
-// POST manually add a client (bypass Stripe for testing)
+// POST manually add a client
 router.post('/clients', requireAdminKey, async (req, res) => {
   const {
     business_name,
     owner_mobile,
     notify_email,
     business_type,
-    after_hours_message,
+    twilio_number,
     plan = 'starter'
   } = req.body
 
@@ -53,32 +52,16 @@ router.post('/clients', requireAdminKey, async (req, res) => {
   }
 
   try {
-    // Run full onboarding pipeline (provision number + create agent)
-    const result = await onboardClient({
-      business_name,
-      owner_mobile,
-      business_type,
-      after_hours_message
-    })
-
-    if (!result.success) {
-      return res.status(500).json({ error: 'Onboarding failed', details: result.error })
-    }
-
-    const blandNumber = result.phone_number
-    const agentId = result.agent_id
-
-    // Save to Supabase
+    // Save client to Supabase
     const { data: client, error } = await supabase
       .from('clients')
       .insert({
         business_name,
-        bland_number: blandNumber,
-        bland_agent_id: agentId,
+        bland_number: twilio_number || null,
         owner_mobile,
         notify_sms: owner_mobile,
-        notify_email,
-        business_type: business_type || 'clinic',
+        notify_email: notify_email || null,
+        business_type: business_type || 'general',
         plan,
         active: true
       })
@@ -92,20 +75,18 @@ router.post('/clients', requireAdminKey, async (req, res) => {
     // Send welcome SMS
     await sendSMS(
       owner_mobile,
-      `Welcome to Callm8! Your number is ${blandNumber}. Share it with your customers and we'll handle every call you miss. — Callm8`
+      `Welcome to Callm8! We're now handling your missed calls. — Callm8`
     )
 
     res.json({
       success: true,
       client,
-      bland_number: blandNumber,
-      agent_id: agentId,
-      message: `Client onboarded successfully. Number: ${blandNumber}`
+      message: 'Client created successfully'
     })
 
-  } catch (error) {
-    console.error('Manual onboarding error:', error)
-    res.status(500).json({ error: error.message })
+  } catch (err) {
+    console.error('Client creation error:', err)
+    res.status(500).json({ error: err.message })
   }
 })
 
