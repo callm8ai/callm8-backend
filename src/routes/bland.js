@@ -8,7 +8,6 @@ router.post('/', async (req, res) => {
   res.status(200).json({ received: true })
   try {
     const payload = req.body
-    console.log('CALLM8:', payload.call_id, payload.to, payload.from, payload.status)
     const callId = payload.call_id
     const callerNumber = payload.from || payload.caller || 'Unknown'
     const toNumber = payload.to || payload.inbound_number
