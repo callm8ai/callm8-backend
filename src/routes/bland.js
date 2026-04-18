@@ -10,7 +10,7 @@ router.post('/', async (req, res) => {
 
   try {
     const payload = req.body
-    console.log('Bland webhook received:', JSON.stringify(payload, null, 2))
+    console.log('Bland webhook received:', { call_id: payload.call_id, to: payload.to, from: payload.from, status: payload.status })
 
     const callId = payload.call_id
     const callerNumber = payload.from || payload.caller || 'Unknown'
