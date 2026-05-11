@@ -158,10 +158,11 @@ async function handleNewClient(session) {
   // Buys time while number is manually provisioned, collects agent customisation details
   if (notify_email) {
     await sendEmail(
-      notify_email,
-      'One quick step before you go live — Callm8',
-      buildSetupEmail(business_name)
-    )
+  notify_email,
+  'One quick step before you go live — Callm8',
+  buildSetupEmail(business_name),
+  'hello@callm8.ai'
+)
     console.log(`✅ Setup email sent to ${notify_email}`)
   }
 
@@ -330,7 +331,7 @@ function buildSetupEmail(businessName) {
    Contains the Callm8 number and activation instructions.
 ========================= */
 function buildWelcomeEmail(businessName, blandNumber, plan) {
-  const planLabel = plan === 'pro' ? 'Pro' : 'Starter'
+  const planLabel = plan === 'pro' ? 'Growing Clinic' : 'Solo Practice'
 
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
