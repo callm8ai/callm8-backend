@@ -1,23 +1,24 @@
 const { Resend } = require('resend')
-
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-async function sendEmail(to, subject, html) {
-  console.log("🔥 EMAIL FUNCTION ENTERED") // 👈 ADD THIS HERE
-
+async function sendEmail(to, subject, html, bcc = null) {
+  console.log("🔥 EMAIL FUNCTION ENTERED")
   try {
-    const { data, error } = await resend.emails.send({
+    const payload = {
       from: process.env.RESEND_FROM_EMAIL,
       to,
       subject,
       html
-    })
+    }
+
+    if (bcc) payload.bcc = bcc
+
+    const { data, error } = await resend.emails.send(payload)
 
     if (error) {
       console.error(`Resend error sending to ${to}:`, JSON.stringify(error))
       return { success: false, error }
     }
-
     console.log(`Email sent to ${to}: ${data?.id}`)
     return { success: true, id: data?.id }
   } catch (error) {
@@ -29,7 +30,6 @@ async function sendEmail(to, subject, html) {
 function buildCallSummaryEmail(client, call) {
   const duration = call.duration ? `${Math.round(call.duration / 60)} min` : 'Unknown'
   const time = new Date(call.created_at).toLocaleString('en-AU', { timeZone: 'Australia/Sydney' })
-
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <div style="background: #0D0D2B; padding: 20px; border-radius: 8px 8px 0 0;">
@@ -53,19 +53,16 @@ function buildCallSummaryEmail(client, call) {
             <td style="padding: 8px 0; color: #333;">${duration}</td>
           </tr>
         </table>
-
         <div style="background: #fff; border-left: 4px solid #0D0D2B; padding: 15px; margin-bottom: 20px; border-radius: 0 4px 4px 0;">
           <h3 style="margin: 0 0 10px 0; color: #333;">📋 Call Summary</h3>
           <p style="margin: 0; color: #444; line-height: 1.6;">${call.summary || 'No summary available.'}</p>
         </div>
-
         ${call.transcript ? `
         <div style="background: #fff; border: 1px solid #eee; padding: 15px; border-radius: 4px;">
           <h3 style="margin: 0 0 10px 0; color: #333;">📝 Full Transcript</h3>
           <p style="margin: 0; color: #666; font-size: 13px; line-height: 1.6; white-space: pre-wrap;">${call.transcript}</p>
         </div>
         ` : ''}
-
         <p style="margin-top: 25px; color: #999; font-size: 12px; text-align: center;">
           Powered by <strong>Callm8</strong> · callm8.ai
         </p>
