@@ -154,6 +154,17 @@ async function handleNewClient(session) {
     return
   }
 
+  // 0. Send immediate setup email — fires before number provisioning
+  // Buys time while number is manually provisioned, collects agent customisation details
+  if (notify_email) {
+    await sendEmail(
+      notify_email,
+      'One quick step before you go live — Callm8',
+      buildSetupEmail(business_name)
+    )
+    console.log(`✅ Setup email sent to ${notify_email}`)
+  }
+
   let twilioNumber = null
 
   // 1. Purchase AU number from Twilio (skipped in TEST_MODE)
@@ -223,11 +234,11 @@ async function handleNewClient(session) {
 
   await sendSMS(owner_mobile, welcomeSMS)
 
-  // 5. Send welcome email
+  // 5. Send welcome email with number now that provisioning is complete
   if (notify_email) {
     await sendEmail(
       notify_email,
-      `Welcome to Callm8 — Your number is ${assignedNumber}`,
+      `Your Callm8 number is ready — ${assignedNumber}`,
       buildWelcomeEmail(business_name, assignedNumber, plan || 'starter')
     )
   }
@@ -277,7 +288,46 @@ async function handleCancelledClient(subscription) {
 }
 
 /* =========================
-   WELCOME EMAIL TEMPLATE
+   EMAIL 1 — SETUP EMAIL
+   Fires immediately on payment.
+   Collects agent customisation details while
+   number is being manually provisioned.
+========================= */
+function buildSetupEmail(businessName) {
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background: #0D0D2B; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+        <h1 style="color: #FFFFFF; margin: 0; font-size: 28px;">You're almost live 🎉</h1>
+      </div>
+      <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #eee;">
+        <p style="color: #333; font-size: 16px;">Hey ${businessName},</p>
+        <p style="color: #333;">Payment confirmed — your Callm8 receptionist is being set up now. You'll receive your dedicated number within a few hours.</p>
+        <p style="color: #333;">While I get that sorted, I just need a couple of details to personalise your agent:</p>
+        <ol style="color: #444; line-height: 2.2;">
+          <li>
+            What's your clinic name and how should the receptionist answer calls?<br>
+            <em style="color: #999;">(e.g. "Thanks for calling Sunrise Physio, you've reached our after-hours receptionist")</em>
+          </li>
+          <li>
+            Any specific information you want captured from callers?<br>
+            <em style="color: #999;">(e.g. reason for call, preferred callback time)</em>
+          </li>
+          <li>Any FAQs you'd like your agent to know the answer to?</li>
+        </ol>
+        <p style="color: #333;">Just reply to this email — takes 2 minutes.</p>
+        <p style="color: #333;">— Dan<br>Callm8</p>
+        <p style="margin-top: 30px; color: #999; font-size: 12px; text-align: center;">
+          Powered by <strong>Callm8</strong> · callm8.ai
+        </p>
+      </div>
+    </div>
+  `
+}
+
+/* =========================
+   EMAIL 2 — WELCOME EMAIL
+   Fires after number is provisioned.
+   Contains the Callm8 number and activation instructions.
 ========================= */
 function buildWelcomeEmail(businessName, blandNumber, plan) {
   const planLabel = plan === 'pro' ? 'Pro' : 'Starter'
@@ -285,7 +335,7 @@ function buildWelcomeEmail(businessName, blandNumber, plan) {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <div style="background: #0D0D2B; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-        <h1 style="color: #FFFFFF; margin: 0; font-size: 28px;">Welcome to Callm8 👋</h1>
+        <h1 style="color: #FFFFFF; margin: 0; font-size: 28px;">You're live 👋</h1>
         <p style="color: #aaa; margin: 8px 0 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">${planLabel} Plan</p>
       </div>
       <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #eee;">
@@ -297,7 +347,7 @@ function buildWelcomeEmail(businessName, blandNumber, plan) {
           <h2 style="color: #FFFFFF; margin: 0; font-size: 32px; letter-spacing: 2px;">${blandNumber}</h2>
         </div>
 
-        <p style="color: #333;"><strong>How to activate:</strong> Forward your mobile number to ${blandNumber}. When you can't answer, our AI will:</p>
+        <p style="color: #333;"><strong>One step to activate:</strong> Forward your clinic number to ${blandNumber}. When you can't answer, your AI receptionist will:</p>
         <ul style="color: #444; line-height: 2;">
           <li>Answer professionally on your behalf</li>
           <li>Capture the caller's name and reason for calling</li>
@@ -305,7 +355,7 @@ function buildWelcomeEmail(businessName, blandNumber, plan) {
         </ul>
 
         <p style="color: #333;">Questions? Reply to this email anytime.</p>
-        <p style="color: #333;">— The Callm8 Team</p>
+        <p style="color: #333;">— Dan<br>Callm8</p>
 
         <p style="margin-top: 30px; color: #999; font-size: 12px; text-align: center;">
           Powered by <strong>Callm8</strong> · callm8.ai
