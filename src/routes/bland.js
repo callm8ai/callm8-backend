@@ -78,9 +78,18 @@ router.post('/', async (req, res) => {
 })
 
 function buildSMSBody(client, call) {
-  const duration = call.duration ? `${Math.round(call.duration / 60)} min` : 'Unknown'
-  const summary = call.summary ? `\n\n${call.summary}` : '\n\nNo summary captured.'
-  return `📞 CALLM8 — Missed Call\n📱 ${call.caller_number}\n⏱ ${duration}${summary}\n\n— Callm8`
+  const duration = call.duration
+    ? `${Math.round(call.duration / 60)} min`
+    : 'Unknown'
+  const summary = call.summary
+    ? `\n\n${call.summary}`
+    : '\n\nNo summary captured.'
+
+  const bookingLine = client.booking_url
+    ? `\n\n📅 Book: ${client.booking_url}`
+    : ''
+
+  return `📞 CALLM8 — Missed Call\n📱 ${call.caller_number}\n⏱ ${duration}${summary}${bookingLine}\n\n— Callm8`
 }
 
 module.exports = router
