@@ -12,6 +12,7 @@ router.post('/', async (req, res) => {
     const callerNumber = payload.from || payload.caller || 'Unknown'
     const toNumber = payload.to || payload.inbound_number
     const summary = payload.summary || payload.call_summary || null
+    const transcript = payload.transcript || null
     const duration = payload.call_length || payload.duration || null
     const status = payload.status || 'completed'
 
@@ -22,7 +23,6 @@ router.post('/', async (req, res) => {
       .select('id')
       .eq('call_id', callId)
       .single()
-
     if (existing) return
 
     const { data: client } = await supabase
@@ -72,6 +72,17 @@ router.post('/', async (req, res) => {
       await sendEmail(client.notify_email, subject, buildCallSummaryEmail(client, callRecord))
     }
 
+    // Send booking link to caller if needed
+    const bookingKeywords = ['book', 'appointment', 'schedule', 'booking', 'reserve']
+    const needsBooking = bookingKeywords.some(word =>
+      ((summary || '') + ' ' + (transcript || '')).toLowerCase().includes(word)
+    )
+
+    if (needsBooking && client.booking_url) {
+      const callerSMS = `Hi! Thanks for calling ${client.business_name}. Book your appointment here: ${client.booking_url}`
+      await sendSMS(callerNumber, callerSMS)
+    }
+
   } catch (error) {
     console.error('Webhook error:', error.message)
   }
@@ -84,12 +95,7 @@ function buildSMSBody(client, call) {
   const summary = call.summary
     ? `\n\n${call.summary}`
     : '\n\nNo summary captured.'
-
-  const bookingLine = client.booking_url
-    ? `\n\n📅 Book: ${client.booking_url}`
-    : ''
-
-  return `📞 CALLM8 — Missed Call\n📱 ${call.caller_number}\n⏱ ${duration}${summary}${bookingLine}\n\n— Callm8`
+  return `📞 CALLM8 — Missed Call\n📱 ${call.caller_number}\n⏱ ${duration}${summary}\n\n— Callm8`
 }
 
 module.exports = router
