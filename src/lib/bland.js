@@ -1,4 +1,5 @@
 const axios = require('axios')
+const { sendSMS } = require('./sms')
 
 const BLAND_BASE = 'https://api.bland.ai/v1'
 
@@ -7,11 +8,6 @@ const headers = () => ({
   'Content-Type': 'application/json'
 })
 
-/* =========================
-   IMPORT NUMBER VIA BYOT
-   Tells Bland to pull in a Twilio number already
-   connected via the BYOT add-on in the Bland dashboard.
-========================= */
 async function importTwilioNumber(phoneNumber) {
   if (process.env.TEST_MODE === 'true') {
     console.log(`🧪 TEST_MODE: skipping BYOT import for ${phoneNumber}`)
@@ -19,16 +15,14 @@ async function importTwilioNumber(phoneNumber) {
   }
 
   try {
-    // Bland BYOT import — pulls the number from your connected Twilio account
     const res = await axios.post(
       `${BLAND_BASE}/inbound/purchase`,
       {
         phone_number: phoneNumber,
-        encrypted_key: process.env.BLAND_ENCRYPTED_KEY // set after BYOT connect
+        encrypted_key: process.env.BLAND_ENCRYPTED_KEY
       },
       { headers: headers() }
     )
-
     console.log('BYOT import response:', JSON.stringify(res.data))
     return { success: true }
   } catch (err) {
@@ -37,9 +31,6 @@ async function importTwilioNumber(phoneNumber) {
   }
 }
 
-/* =========================
-   CREATE AGENT
-========================= */
 async function createAgent(clientConfig) {
   if (process.env.TEST_MODE === 'true') {
     console.log(`🧪 TEST_MODE: skipping agent creation, using TEST_AGENT_ID`)
@@ -52,7 +43,7 @@ async function createAgent(clientConfig) {
 
   const {
     businessName,
-    businessType = 'trades',
+    businessType = 'allied_health',
     afterHoursMessage
   } = clientConfig
 
@@ -64,21 +55,21 @@ async function createAgent(clientConfig) {
     console.warn('⚠️  RAILWAY_PUBLIC_DOMAIN not set — Bland webhook will not fire')
   }
 
-  const prompt = `You are a professional receptionist for ${businessName}, a ${businessType} business.
+  const prompt = `You are a friendly and professional receptionist for ${businessName}, an allied health clinic.
 
 Your job is to:
 - Greet callers warmly and professionally
 - Ask for their name and reason for calling
-- If it's a job enquiry, get the type of work needed, their address, and best callback number
-- Capture any urgency (e.g. emergency leak, no power, urgent repair)
-- Let them know the owner will call them back shortly
+- If they want to book an appointment, take their name and what they're coming in for, then let them know a booking link will be sent to them via SMS shortly
+- If it's an existing patient following up, take their name and message for the treating practitioner
+- Capture any urgency and let them know the clinic will call back as soon as possible
 - Keep calls efficient and under 2 minutes where possible
 
-Always introduce yourself as the ${businessName} answering service.
-Never quote prices or make bookings — just take a message.
+Always introduce yourself as the ${businessName} reception.
+Never quote fees or confirm availability — just take a message and advise the SMS booking link is on its way.
 ${afterHoursMessage
     ? `After hours message to relay: ${afterHoursMessage}`
-    : 'If asked about hours, say someone will be in touch shortly.'
+    : 'If asked about hours, let them know the team will be in touch shortly.'
   }`
 
   try {
@@ -87,7 +78,7 @@ ${afterHoursMessage
       {
         name: `${businessName} Receptionist`,
         prompt,
-        voice: 'maya',
+        voice: 'alice',
         language: 'en-AU',
         webhook: webhookUrl
       },
@@ -110,13 +101,11 @@ ${afterHoursMessage
     return { success: true, agentId }
   } catch (err) {
     console.error('Agent creation failed:', JSON.stringify(err.response?.data || err.message))
+    await sendSMS(process.env.ADMIN_MOBILE, `🚨 Bland agent creation failed for ${clientConfig.businessName}. Manual intervention needed.`)
     return { success: false, error: err.response?.data || err.message }
   }
 }
 
-/* =========================
-   ASSIGN AGENT TO NUMBER
-========================= */
 async function assignAgentToNumber(phoneNumber, agentId) {
   if (process.env.TEST_MODE === 'true') {
     console.log(`🧪 TEST_MODE: skipping agent assignment`)
@@ -133,27 +122,21 @@ async function assignAgentToNumber(phoneNumber, agentId) {
     return { success: true }
   } catch (err) {
     console.error('Agent assignment failed:', JSON.stringify(err.response?.data || err.message))
+    await sendSMS(process.env.ADMIN_MOBILE, `🚨 Bland agent assignment failed for ${phoneNumber}. Manual intervention needed.`)
     return { success: false, error: err.response?.data || err.message }
   }
 }
 
-/* =========================
-   FULL ONBOARDING PIPELINE
-   Called by both Stripe webhook (auto) and
-   admin route (manual/test).
-========================= */
 async function onboardClient(rawData, twilioNumber) {
   const clientConfig = {
     businessName: rawData.business_name,
     ownerMobile: rawData.owner_mobile,
-    businessType: rawData.business_type || 'trades',
+    businessType: rawData.business_type || 'allied_health',
     afterHoursMessage: rawData.after_hours_message
   }
 
   console.log(`🚀 Onboarding: ${clientConfig.businessName} | TEST_MODE: ${process.env.TEST_MODE}`)
 
-  // In test mode, return hardcoded values immediately —
-  // no purchasing, no importing, no agent creation
   if (process.env.TEST_MODE === 'true') {
     console.log(`🧪 Using test number: ${process.env.TEST_BLAND_NUMBER}`)
     console.log(`🧪 Using test agent: ${process.env.TEST_AGENT_ID}`)
@@ -165,19 +148,17 @@ async function onboardClient(rawData, twilioNumber) {
     }
   }
 
-  // 1. Import Twilio number into Bland via BYOT
   const importResult = await importTwilioNumber(twilioNumber)
   if (!importResult.success) {
+    await sendSMS(process.env.ADMIN_MOBILE, `🚨 BYOT import failed for ${clientConfig.businessName} (${twilioNumber}). Manual intervention needed.`)
     throw new Error('Failed to import number into Bland: ' + JSON.stringify(importResult.error))
   }
 
-  // 2. Create agent
   const agentResult = await createAgent(clientConfig)
   if (!agentResult.success) {
     throw new Error('Failed to create agent: ' + JSON.stringify(agentResult.error))
   }
 
-  // 3. Assign agent to number
   const assignResult = await assignAgentToNumber(twilioNumber, agentResult.agentId)
   if (!assignResult.success) {
     throw new Error('Failed to assign agent to number: ' + JSON.stringify(assignResult.error))
@@ -190,10 +171,6 @@ async function onboardClient(rawData, twilioNumber) {
   }
 }
 
-/* =========================
-   DELETE AGENT
-   Called when a client cancels their subscription
-========================= */
 async function deleteAgent(agentId) {
   if (process.env.TEST_MODE === 'true') {
     console.log(`🧪 TEST_MODE: skipping agent deletion`)
