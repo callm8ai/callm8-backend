@@ -1,14 +1,11 @@
 const twilio = require('twilio')
+const { sendSMS } = require('./sms')
 
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 )
 
-/**
- * Purchase a new Australian mobile number from Twilio.
- * In TEST_MODE, returns the hardcoded test number instead.
- */
 async function purchaseAustralianNumber() {
   if (process.env.TEST_MODE === 'true') {
     console.log('🧪 TEST_MODE: skipping Twilio number purchase')
@@ -18,9 +15,7 @@ async function purchaseAustralianNumber() {
       testMode: true
     }
   }
-
   try {
-    // Search for available AU mobile numbers
     const available = await client
       .availablePhoneNumbers('AU')
       .mobile.list({ limit: 1 })
@@ -29,7 +24,6 @@ async function purchaseAustralianNumber() {
       throw new Error('No Australian mobile numbers available in Twilio')
     }
 
-    // Purchase the first available number
     const purchased = await client.incomingPhoneNumbers.create({
       phoneNumber: available[0].phoneNumber
     })
@@ -38,21 +32,17 @@ async function purchaseAustralianNumber() {
     return { success: true, number: purchased.phoneNumber }
   } catch (err) {
     console.error('Twilio number purchase failed:', err.message)
+    await sendSMS(process.env.ADMIN_MOBILE, `🚨 Twilio number purchase failed for new client. Error: ${err.message}. Manual intervention needed.`)
     return { success: false, error: err.message }
   }
 }
 
-/**
- * Release a Twilio number (used when a client cancels).
- */
 async function releaseNumber(phoneNumber) {
   if (process.env.TEST_MODE === 'true') {
     console.log(`🧪 TEST_MODE: skipping Twilio number release for ${phoneNumber}`)
     return { success: true }
   }
-
   try {
-    // Find the SID for this number
     const numbers = await client.incomingPhoneNumbers.list({
       phoneNumber
     })
