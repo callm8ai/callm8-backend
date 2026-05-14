@@ -7,19 +7,6 @@ const { purchaseAustralianNumber, releaseNumber } = require('../lib/twilio')
 const { sendSMS } = require('../lib/sms')
 const { sendEmail } = require('../lib/email')
 
-/* =========================
-   CREATE CHECKOUT SESSION
-   Called by your frontend signup form.
-   Accepts customer details + plan, creates a Stripe
-   hosted checkout page and returns the URL.
-
-   POST /webhooks/stripe/create-checkout-session
-   Body: {
-     business_name, owner_mobile, notify_email,
-     business_type, after_hours_message, plan
-   }
-   plan: 'starter' ($99/mo) or 'pro' ($197/mo)
-========================= */
 router.post('/create-checkout-session', express.json(), async (req, res) => {
   const {
     business_name,
@@ -36,7 +23,6 @@ router.post('/create-checkout-session', express.json(), async (req, res) => {
     })
   }
 
-  // Select price ID based on plan
   const priceId = plan === 'pro'
     ? process.env.STRIPE_PRICE_ID_PRO
     : process.env.STRIPE_PRICE_ID_STARTER
@@ -57,12 +43,11 @@ router.post('/create-checkout-session', express.json(), async (req, res) => {
           quantity: 1
         }
       ],
-      // Pass customer data through as metadata so the webhook can use it
       metadata: {
         business_name,
         owner_mobile,
         notify_email,
-        business_type: business_type || 'trades',
+        business_type: business_type || 'allied_health',
         after_hours_message: after_hours_message || '',
         plan: plan || 'starter'
       },
@@ -78,15 +63,6 @@ router.post('/create-checkout-session', express.json(), async (req, res) => {
   }
 })
 
-/* =========================
-   STRIPE WEBHOOK HANDLER
-   Receives events from Stripe.
-   Must use raw body for signature verification —
-   this is handled in index.js by skipping JSON
-   middleware for this path.
-
-   POST /webhooks/stripe
-========================= */
 router.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature']
   let event
@@ -102,10 +78,8 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
     return res.status(400).send(`Webhook Error: ${err.message}`)
   }
 
-  // Respond immediately — Stripe requires a fast 200
   res.status(200).json({ received: true })
 
-  // Process asynchronously after responding
   try {
     if (event.type === 'checkout.session.completed') {
       await handleNewClient(event.data.object)
@@ -119,11 +93,6 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
   }
 })
 
-/* =========================
-   NEW CLIENT HANDLER
-   Fires when a customer completes checkout.
-   Full auto-onboarding pipeline.
-========================= */
 async function handleNewClient(session) {
   const metadata = session.metadata || {}
   const {
@@ -142,7 +111,6 @@ async function handleNewClient(session) {
 
   console.log(`\n🎉 New client onboarding: ${business_name} (plan: ${plan || 'starter'})`)
 
-  // Check for duplicate — Stripe can fire webhooks more than once
   const { data: existing } = await supabase
     .from('clients')
     .select('id')
@@ -154,21 +122,18 @@ async function handleNewClient(session) {
     return
   }
 
-  // 0. Send immediate setup email — fires before number provisioning
-  // Buys time while number is manually provisioned, collects agent customisation details
   if (notify_email) {
     await sendEmail(
-  notify_email,
-  'One quick step before you go live — Callm8',
-  buildSetupEmail(business_name),
-  'hello@callm8.ai'
-)
+      notify_email,
+      'One quick step before you go live — Callm8',
+      buildSetupEmail(business_name),
+      'hello@callm8.ai'
+    )
     console.log(`✅ Setup email sent to ${notify_email}`)
   }
 
   let twilioNumber = null
 
-  // 1. Purchase AU number from Twilio (skipped in TEST_MODE)
   if (process.env.TEST_MODE !== 'true') {
     const numberResult = await purchaseAustralianNumber()
     if (!numberResult.success) {
@@ -179,7 +144,6 @@ async function handleNewClient(session) {
     console.log(`✅ Twilio number purchased: ${twilioNumber}`)
   }
 
-  // 2. Run Bland onboarding (import number, create agent, assign)
   let onboardResult
   try {
     onboardResult = await onboardClient(
@@ -188,7 +152,6 @@ async function handleNewClient(session) {
     )
   } catch (err) {
     console.error('Bland onboarding failed for', business_name, err.message)
-    // If Bland fails after we bought the number, release it to avoid orphaned numbers
     if (twilioNumber && process.env.TEST_MODE !== 'true') {
       await releaseNumber(twilioNumber)
     }
@@ -198,7 +161,6 @@ async function handleNewClient(session) {
   const assignedNumber = onboardResult.phone_number
   const agentId = onboardResult.agent_id
 
-  // 3. Save client to Supabase
   const { data: client, error } = await supabase
     .from('clients')
     .insert({
@@ -208,7 +170,7 @@ async function handleNewClient(session) {
       owner_mobile,
       notify_sms: owner_mobile,
       notify_email,
-      business_type: business_type || 'trades',
+      business_type: business_type || 'allied_health',
       stripe_customer_id: session.customer,
       stripe_session_id: session.id,
       plan: plan || 'starter',
@@ -224,7 +186,6 @@ async function handleNewClient(session) {
 
   console.log(`✅ Client ${business_name} saved (id: ${client.id})`)
 
-  // 4. Send welcome SMS
   const welcomeSMS = [
     `Welcome to Callm8! 🎉`,
     `Your AI receptionist is now active.`,
@@ -235,7 +196,6 @@ async function handleNewClient(session) {
 
   await sendSMS(owner_mobile, welcomeSMS)
 
-  // 5. Send welcome email with number now that provisioning is complete
   if (notify_email) {
     await sendEmail(
       notify_email,
@@ -247,16 +207,9 @@ async function handleNewClient(session) {
   console.log(`✅ Onboarding complete for ${business_name} | Number: ${assignedNumber} | Plan: ${plan || 'starter'}\n`)
 }
 
-/* =========================
-   CANCELLED CLIENT HANDLER
-   Fires when a Stripe subscription is cancelled.
-   Deactivates client, releases their number,
-   deletes their Bland agent.
-========================= */
 async function handleCancelledClient(subscription) {
   console.log(`\n❌ Cancellation for Stripe customer: ${subscription.customer}`)
 
-  // Look up the client
   const { data: client, error } = await supabase
     .from('clients')
     .select('*')
@@ -268,18 +221,15 @@ async function handleCancelledClient(subscription) {
     return
   }
 
-  // Deactivate in Supabase
   await supabase
     .from('clients')
     .update({ active: false })
     .eq('id', client.id)
 
-  // Release Twilio number (frees up the number, stops billing)
   if (client.bland_number && process.env.TEST_MODE !== 'true') {
     await releaseNumber(client.bland_number)
   }
 
-  // Delete Bland agent
   if (client.bland_agent_id && process.env.TEST_MODE !== 'true') {
     const { deleteAgent } = require('../lib/bland')
     await deleteAgent(client.bland_agent_id)
@@ -288,12 +238,6 @@ async function handleCancelledClient(subscription) {
   console.log(`✅ Client ${client.business_name} deactivated and cleaned up\n`)
 }
 
-/* =========================
-   EMAIL 1 — SETUP EMAIL
-   Fires immediately on payment.
-   Collects agent customisation details while
-   number is being manually provisioned.
-========================= */
 function buildSetupEmail(businessName) {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -314,6 +258,7 @@ function buildSetupEmail(businessName) {
             <em style="color: #999;">(e.g. reason for call, preferred callback time)</em>
           </li>
           <li>Any FAQs you'd like your agent to know the answer to?</li>
+          <li>Your booking/calendar link if you'd like it sent to callers automatically</li>
         </ol>
         <p style="color: #333;">Just reply to this email — takes 2 minutes.</p>
         <p style="color: #333;">— Dan<br>Callm8</p>
@@ -325,11 +270,6 @@ function buildSetupEmail(businessName) {
   `
 }
 
-/* =========================
-   EMAIL 2 — WELCOME EMAIL
-   Fires after number is provisioned.
-   Contains the Callm8 number and activation instructions.
-========================= */
 function buildWelcomeEmail(businessName, blandNumber, plan) {
   const planLabel = plan === 'pro' ? 'Growing Clinic' : 'Solo Practice'
 
@@ -353,6 +293,7 @@ function buildWelcomeEmail(businessName, blandNumber, plan) {
           <li>Answer professionally on your behalf</li>
           <li>Capture the caller's name and reason for calling</li>
           <li>Send you an instant SMS + email summary</li>
+          <li>Send callers a booking link via SMS if they need an appointment</li>
         </ul>
 
         <p style="color: #333;">Questions? Reply to this email anytime.</p>
