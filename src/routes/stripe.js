@@ -125,7 +125,7 @@ async function handleNewClient(session) {
   if (notify_email) {
     await sendEmail(
       notify_email,
-      'One quick step before you go live — Callm8',
+      'Your Callm8 receptionist is being set up now',
       buildSetupEmail(business_name),
       'hello@callm8.ai'
     )
@@ -199,7 +199,7 @@ async function handleNewClient(session) {
   if (notify_email) {
     await sendEmail(
       notify_email,
-      `Your Callm8 number is ready — ${assignedNumber}`,
+      `You're live — your Callm8 number is ${assignedNumber}`,
       buildWelcomeEmail(business_name, assignedNumber, plan || 'starter')
     )
   }
@@ -246,21 +246,21 @@ function buildSetupEmail(businessName) {
       </div>
       <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #eee;">
         <p style="color: #333; font-size: 16px;">Hey ${businessName},</p>
-        <p style="color: #333;">Payment confirmed — your Callm8 receptionist is being set up now. You'll receive your dedicated number within a few hours.</p>
-        <p style="color: #333;">While I get that sorted, I just need a couple of details to personalise your agent:</p>
+        <p style="color: #333;">Payment confirmed — your dedicated Callm8 number is being provisioned automatically right now. You'll receive it in your next email within minutes.</p>
+        <p style="color: #333;">In the meantime, help us personalise your agent by replying with any of the following:</p>
         <ol style="color: #444; line-height: 2.2;">
           <li>
-            What's your clinic name and how should the receptionist answer calls?<br>
+            How should your receptionist answer calls?<br>
             <em style="color: #999;">(e.g. "Thanks for calling Sunrise Physio, you've reached our after-hours receptionist")</em>
           </li>
           <li>
-            Any specific information you want captured from callers?<br>
-            <em style="color: #999;">(e.g. reason for call, preferred callback time)</em>
+            Any specific info you want captured from callers?<br>
+            <em style="color: #999;">(e.g. reason for call, Medicare or private health)</em>
           </li>
-          <li>Any FAQs you'd like your agent to know the answer to?</li>
-          <li>Your booking/calendar link if you'd like it sent to callers automatically</li>
+          <li>Any FAQs you'd like your agent to handle?</li>
+          <li>Your online booking link so callers can be sent it automatically via SMS</li>
         </ol>
-        <p style="color: #333;">Just reply to this email — takes 2 minutes.</p>
+        <p style="color: #333;">All optional — your agent is already set up and ready to go. These details just make it feel like yours.</p>
         <p style="color: #333;">— Dan<br>Callm8</p>
         <p style="margin-top: 30px; color: #999; font-size: 12px; text-align: center;">
           Powered by <strong>Callm8</strong> · callm8.ai
