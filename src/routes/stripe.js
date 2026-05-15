@@ -278,4 +278,50 @@ function buildSetupEmail(businessName) {
           <li>Your online booking link so callers can be sent it automatically via SMS</li>
         </ol>
         <p style="color: #333;">All optional — your agent is already set up and ready to go. These details just make it feel like yours.</p>
-        <p
+        <p style="color: #333;">— Dan<br>Callm8</p>
+        <p style="margin-top: 30px; color: #999; font-size: 12px; text-align: center;">
+          Powered by <strong>Callm8</strong> · callm8.ai
+        </p>
+      </div>
+    </div>
+  `
+}
+
+function buildWelcomeEmail(businessName, blandNumber, plan) {
+  const planLabel = plan === 'pro' ? 'Growing Clinic' : 'Solo Practice'
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background: #0D0D2B; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+        <h1 style="color: #FFFFFF; margin: 0; font-size: 28px;">You're live 👋</h1>
+        <p style="color: #aaa; margin: 8px 0 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">${planLabel} Plan</p>
+      </div>
+      <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #eee;">
+        <p style="color: #333; font-size: 16px;">Hi ${businessName},</p>
+        <p style="color: #333;">Your AI receptionist is live and ready to handle every call you miss.</p>
+
+        <div style="background: #0D0D2B; border-radius: 8px; padding: 20px; text-align: center; margin: 25px 0;">
+          <p style="color: #aaa; margin: 0 0 5px 0; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">Your Callm8 Number</p>
+          <h2 style="color: #FFFFFF; margin: 0; font-size: 32px; letter-spacing: 2px;">${blandNumber}</h2>
+        </div>
+
+        <p style="color: #333;"><strong>One step to activate:</strong> Forward your clinic number to ${blandNumber}. When you can't answer, your AI receptionist will:</p>
+        <ul style="color: #444; line-height: 2;">
+          <li>Answer professionally on your behalf</li>
+          <li>Capture the caller's name and reason for calling</li>
+          <li>Send you an instant SMS + email summary</li>
+          <li>Send callers a booking link via SMS if they need an appointment</li>
+        </ul>
+
+        <p style="color: #333;">Questions? Reply to this email anytime.</p>
+        <p style="color: #333;">— Dan<br>Callm8</p>
+
+        <p style="margin-top: 30px; color: #999; font-size: 12px; text-align: center;">
+          Powered by <strong>Callm8</strong> · callm8.ai
+        </p>
+      </div>
+    </div>
+  `
+}
+
+module.exports = router
