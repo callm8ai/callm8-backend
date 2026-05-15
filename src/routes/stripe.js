@@ -95,17 +95,34 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
 
 async function handleNewClient(session) {
   const metadata = session.metadata || {}
-  const {
-    business_name,
-    owner_mobile,
-    notify_email,
-    business_type,
-    after_hours_message,
-    plan
-  } = metadata
+
+  let business_name = metadata.business_name
+  let owner_mobile = metadata.owner_mobile
+  let notify_email = metadata.notify_email
+  let business_type = metadata.business_type
+  let after_hours_message = metadata.after_hours_message
+  let plan = metadata.plan
+
+  // If metadata is empty (Payment Link flow), fetch from Stripe customer object
+  if (!business_name || !owner_mobile) {
+    console.log('No metadata found, fetching from Stripe customer object...')
+    try {
+      const customer = await stripe.customers.retrieve(session.customer)
+      business_name = customer.metadata?.business_name || customer.name || 'Unknown Business'
+      owner_mobile = customer.phone || customer.metadata?.owner_mobile || null
+      notify_email = customer.email || null
+      business_type = customer.metadata?.business_type || 'allied_health'
+      after_hours_message = customer.metadata?.after_hours_message || ''
+      plan = customer.metadata?.plan || 'starter'
+      console.log(`Fetched from customer: ${business_name} | ${owner_mobile} | ${notify_email}`)
+    } catch (err) {
+      console.error('Failed to fetch Stripe customer:', err.message)
+    }
+  }
 
   if (!business_name || !owner_mobile) {
-    console.error('Missing required metadata in Stripe session:', session.id)
+    console.error('Missing required client data in Stripe session:', session.id)
+    await sendSMS(process.env.ADMIN_MOBILE, `🚨 New payment but missing client data. Session: ${session.id}. Check Stripe manually.`)
     return
   }
 
@@ -261,50 +278,4 @@ function buildSetupEmail(businessName) {
           <li>Your online booking link so callers can be sent it automatically via SMS</li>
         </ol>
         <p style="color: #333;">All optional — your agent is already set up and ready to go. These details just make it feel like yours.</p>
-        <p style="color: #333;">— Dan<br>Callm8</p>
-        <p style="margin-top: 30px; color: #999; font-size: 12px; text-align: center;">
-          Powered by <strong>Callm8</strong> · callm8.ai
-        </p>
-      </div>
-    </div>
-  `
-}
-
-function buildWelcomeEmail(businessName, blandNumber, plan) {
-  const planLabel = plan === 'pro' ? 'Growing Clinic' : 'Solo Practice'
-
-  return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-      <div style="background: #0D0D2B; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-        <h1 style="color: #FFFFFF; margin: 0; font-size: 28px;">You're live 👋</h1>
-        <p style="color: #aaa; margin: 8px 0 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">${planLabel} Plan</p>
-      </div>
-      <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #eee;">
-        <p style="color: #333; font-size: 16px;">Hi ${businessName},</p>
-        <p style="color: #333;">Your AI receptionist is live and ready to handle every call you miss.</p>
-
-        <div style="background: #0D0D2B; border-radius: 8px; padding: 20px; text-align: center; margin: 25px 0;">
-          <p style="color: #aaa; margin: 0 0 5px 0; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">Your Callm8 Number</p>
-          <h2 style="color: #FFFFFF; margin: 0; font-size: 32px; letter-spacing: 2px;">${blandNumber}</h2>
-        </div>
-
-        <p style="color: #333;"><strong>One step to activate:</strong> Forward your clinic number to ${blandNumber}. When you can't answer, your AI receptionist will:</p>
-        <ul style="color: #444; line-height: 2;">
-          <li>Answer professionally on your behalf</li>
-          <li>Capture the caller's name and reason for calling</li>
-          <li>Send you an instant SMS + email summary</li>
-          <li>Send callers a booking link via SMS if they need an appointment</li>
-        </ul>
-
-        <p style="color: #333;">Questions? Reply to this email anytime.</p>
-        <p style="color: #333;">— Dan<br>Callm8</p>
-
-        <p style="margin-top: 30px; color: #999; font-size: 12px; text-align: center;">
-          Powered by <strong>Callm8</strong> · callm8.ai
-        </p>
-      </div>
-    </div>
-  `
-}
-
-module.exports = router
+        <p
