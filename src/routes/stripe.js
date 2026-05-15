@@ -96,6 +96,13 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
 async function handleNewClient(session) {
   const metadata = session.metadata || {}
 
+  // Debug log — remove after testing
+  console.log('Session data:', JSON.stringify({
+    customer: session.customer,
+    customer_details: session.customer_details,
+    metadata: session.metadata
+  }))
+
   let business_name = metadata.business_name
   let owner_mobile = metadata.owner_mobile
   let notify_email = metadata.notify_email
@@ -118,6 +125,16 @@ async function handleNewClient(session) {
     } catch (err) {
       console.error('Failed to fetch Stripe customer:', err.message)
     }
+  }
+
+  // If still missing, try customer_details from session
+  if (!business_name || !owner_mobile) {
+    console.log('Trying customer_details from session...')
+    const details = session.customer_details || {}
+    business_name = details.name || business_name || 'Unknown Business'
+    owner_mobile = details.phone || owner_mobile || null
+    notify_email = details.email || notify_email || null
+    console.log(`From customer_details: ${business_name} | ${owner_mobile} | ${notify_email}`)
   }
 
   if (!business_name || !owner_mobile) {
