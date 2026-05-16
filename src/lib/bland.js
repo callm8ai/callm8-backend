@@ -39,14 +39,10 @@ async function importTwilioNumber(phoneNumber) {
   }
 }
 
-async function createAgent(clientConfig) {
+async function configureInboundNumber(phoneNumber, clientConfig) {
   if (process.env.TEST_MODE === 'true') {
-    console.log(`🧪 TEST_MODE: skipping agent creation, using TEST_AGENT_ID`)
-    return {
-      success: true,
-      agentId: process.env.TEST_AGENT_ID,
-      testMode: true
-    }
+    console.log(`🧪 TEST_MODE: skipping inbound number configuration`)
+    return { success: true, testMode: true }
   }
 
   const {
@@ -68,7 +64,7 @@ async function createAgent(clientConfig) {
 Your job is to:
 - Greet callers warmly and professionally
 - Ask for their name and reason for calling
-- If they want to book an appointment, take their name and what they're coming in for, then let them know a booking link will be sent to them via SMS shortly
+- If they want to book an appointment, take their name and what they're coming in for, then say: "I'll send you a booking link via SMS shortly so you can lock in a time that suits you"
 - If it's an existing patient following up, take their name and message for the treating practitioner
 - Capture any urgency and let them know the clinic will call back as soon as possible
 - Keep calls efficient and under 2 minutes where possible
@@ -81,49 +77,19 @@ ${afterHoursMessage
   }`
 
   try {
-    const response = await axios.post(
-      `${BLAND_BASE}/agents`,
+    const res = await axios.post(
+      `${BLAND_BASE}/inbound/${encodeURIComponent(phoneNumber)}`,
       {
-        name: `${businessName} Receptionist`,
         prompt,
         voice: 'alley',
         language: 'en-AU',
-        webhook: webhookUrl
+        webhook: webhookUrl,
+        first_sentence: `Thank you for calling ${businessName}, how can I help you today?`,
+        wait_for_greeting: true,
+        interruption_threshold: 100,
+        model: 'enhanced',
+        max_duration: 5
       },
-      { headers: headers() }
-    )
-
-    console.log('Agent created:', JSON.stringify(response.data))
-
-    const agentId =
-      response.data?.agent?.agent_id ||
-      response.data?.agent_id ||
-      response.data?.data?.agent_id ||
-      response.data?.id
-
-    if (!agentId) {
-      console.error('No agent_id in response:', JSON.stringify(response.data))
-      throw new Error('No agent_id returned from Bland')
-    }
-
-    return { success: true, agentId }
-  } catch (err) {
-    console.error('Agent creation failed:', JSON.stringify(err.response?.data || err.message))
-    await sendSMS(process.env.ADMIN_MOBILE, `🚨 Bland agent creation failed for ${clientConfig.businessName}. Manual intervention needed.`)
-    return { success: false, error: err.response?.data || err.message }
-  }
-}
-
-async function assignAgentToNumber(phoneNumber, agentId) {
-  if (process.env.TEST_MODE === 'true') {
-    console.log(`🧪 TEST_MODE: skipping agent assignment`)
-    return { success: true, testMode: true }
-  }
-
-  try {
-    const res = await axios.post(
-      `${BLAND_BASE}/inbound/${encodeURIComponent(phoneNumber)}`,
-      { agent_id: agentId },
       {
         headers: {
           authorization: process.env.BLAND_API_KEY,
@@ -132,11 +98,11 @@ async function assignAgentToNumber(phoneNumber, agentId) {
         }
       }
     )
-    console.log('Agent assigned to number:', JSON.stringify(res.data))
+    console.log('Inbound number configured:', JSON.stringify(res.data))
     return { success: true }
   } catch (err) {
-    console.error('Agent assignment failed:', JSON.stringify(err.response?.data || err.message))
-    await sendSMS(process.env.ADMIN_MOBILE, `🚨 Agent assignment failed for ${phoneNumber}. Manual intervention needed.`)
+    console.error('Inbound number configuration failed:', JSON.stringify(err.response?.data || err.message))
+    await sendSMS(process.env.ADMIN_MOBILE, `🚨 Inbound number configuration failed for ${phoneNumber}. Manual intervention needed.`)
     return { success: false, error: err.response?.data || err.message }
   }
 }
@@ -168,28 +134,27 @@ async function onboardClient(rawData, twilioNumber) {
     throw new Error('Failed to import number into Bland: ' + JSON.stringify(importResult.error))
   }
 
-  // 2. Create agent
-  const agentResult = await createAgent(clientConfig)
-  if (!agentResult.success) {
-    throw new Error('Failed to create agent: ' + JSON.stringify(agentResult.error))
-  }
-
-  // 3. Assign agent to number
-  const assignResult = await assignAgentToNumber(twilioNumber, agentResult.agentId)
-  if (!assignResult.success) {
-    throw new Error('Failed to assign agent to number: ' + JSON.stringify(assignResult.error))
+  // 2. Configure inbound number with prompt, voice, webhook etc
+  const configResult = await configureInboundNumber(twilioNumber, clientConfig)
+  if (!configResult.success) {
+    throw new Error('Failed to configure inbound number: ' + JSON.stringify(configResult.error))
   }
 
   return {
     success: true,
     phone_number: twilioNumber,
-    agent_id: agentResult.agentId
+    agent_id: null
   }
 }
 
 async function deleteAgent(agentId) {
   if (process.env.TEST_MODE === 'true') {
     console.log(`🧪 TEST_MODE: skipping agent deletion`)
+    return { success: true }
+  }
+
+  if (!agentId) {
+    console.log('No agent_id to delete — number configured directly')
     return { success: true }
   }
 
@@ -205,8 +170,7 @@ async function deleteAgent(agentId) {
 
 module.exports = {
   importTwilioNumber,
-  createAgent,
-  assignAgentToNumber,
+  configureInboundNumber,
   onboardClient,
   deleteAgent
 }
