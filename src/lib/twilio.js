@@ -26,7 +26,8 @@ async function purchaseAustralianNumber() {
 
     const purchased = await client.incomingPhoneNumbers.create({
       phoneNumber: available[0].phoneNumber,
-      addressSid: process.env.TWILIO_ADDRESS_SID
+      addressSid: process.env.TWILIO_ADDRESS_SID,
+      regulatoryComplianceBundleSid: process.env.TWILIO_BUNDLE_SID
     })
 
     console.log(`✅ Twilio number purchased: ${purchased.phoneNumber}`)
