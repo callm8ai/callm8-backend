@@ -16,17 +16,25 @@ async function importTwilioNumber(phoneNumber) {
 
   try {
     const res = await axios.post(
-      `${BLAND_BASE}/inbound/purchase`,
+      `${BLAND_BASE}/inbound/insert`,
+      { numbers: [phoneNumber] },
       {
-        phone_number: phoneNumber,
-        encrypted_key: process.env.BLAND_ENCRYPTED_KEY
-      },
-      { headers: headers() }
+        headers: {
+          authorization: process.env.BLAND_API_KEY,
+          'encrypted_key': process.env.BLAND_ENCRYPTED_KEY,
+          'Content-Type': 'application/json'
+        }
+      }
     )
     console.log('BYOT import response:', JSON.stringify(res.data))
-    return { success: true }
+    if (res.data?.inserted?.includes(phoneNumber)) {
+      return { success: true }
+    } else {
+      throw new Error('Number not in inserted array: ' + JSON.stringify(res.data))
+    }
   } catch (err) {
     console.error('BYOT import failed:', JSON.stringify(err.response?.data || err.message))
+    await sendSMS(process.env.ADMIN_MOBILE, `🚨 BYOT import failed for ${phoneNumber}. Manual intervention needed.`)
     return { success: false, error: err.response?.data || err.message }
   }
 }
@@ -78,7 +86,7 @@ ${afterHoursMessage
       {
         name: `${businessName} Receptionist`,
         prompt,
-        voice: 'alice',
+        voice: 'alley',
         language: 'en-AU',
         webhook: webhookUrl
       },
@@ -116,13 +124,19 @@ async function assignAgentToNumber(phoneNumber, agentId) {
     const res = await axios.post(
       `${BLAND_BASE}/inbound/${encodeURIComponent(phoneNumber)}`,
       { agent_id: agentId },
-      { headers: headers() }
+      {
+        headers: {
+          authorization: process.env.BLAND_API_KEY,
+          'encrypted_key': process.env.BLAND_ENCRYPTED_KEY,
+          'Content-Type': 'application/json'
+        }
+      }
     )
     console.log('Agent assigned to number:', JSON.stringify(res.data))
     return { success: true }
   } catch (err) {
     console.error('Agent assignment failed:', JSON.stringify(err.response?.data || err.message))
-    await sendSMS(process.env.ADMIN_MOBILE, `🚨 Bland agent assignment failed for ${phoneNumber}. Manual intervention needed.`)
+    await sendSMS(process.env.ADMIN_MOBILE, `🚨 Agent assignment failed for ${phoneNumber}. Manual intervention needed.`)
     return { success: false, error: err.response?.data || err.message }
   }
 }
@@ -148,17 +162,19 @@ async function onboardClient(rawData, twilioNumber) {
     }
   }
 
+  // 1. Import Twilio number into Bland via BYOT
   const importResult = await importTwilioNumber(twilioNumber)
   if (!importResult.success) {
-    await sendSMS(process.env.ADMIN_MOBILE, `🚨 BYOT import failed for ${clientConfig.businessName} (${twilioNumber}). Manual intervention needed.`)
     throw new Error('Failed to import number into Bland: ' + JSON.stringify(importResult.error))
   }
 
+  // 2. Create agent
   const agentResult = await createAgent(clientConfig)
   if (!agentResult.success) {
     throw new Error('Failed to create agent: ' + JSON.stringify(agentResult.error))
   }
 
+  // 3. Assign agent to number
   const assignResult = await assignAgentToNumber(twilioNumber, agentResult.agentId)
   if (!assignResult.success) {
     throw new Error('Failed to assign agent to number: ' + JSON.stringify(assignResult.error))
