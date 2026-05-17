@@ -7,18 +7,16 @@ const { sendEmail, buildCallSummaryEmail } = require('../lib/email')
 router.post('/', async (req, res) => {
   const payload = req.body
 
-  console.log('🔔 Webhook received')
-  console.log('📦 Payload keys:', Object.keys(payload || {}))
-
   try {
-    // ✅ Ignore Bland log events
+    // -------------------------
+    // Ignore Bland log events
+    // -------------------------
     const isLogEvent =
       payload?.message &&
       payload?.category &&
       payload?.log_level
 
     if (isLogEvent || !payload?.call_id) {
-      console.log('⏭️ Skipping non-call event')
       return res.status(200).json({ ignored: true })
     }
 
@@ -30,20 +28,21 @@ router.post('/', async (req, res) => {
     const duration = payload.call_length || payload.duration || null
     const status = payload.status || 'completed'
 
-    console.log(`📞 Call ID: ${callId} | To: ${toNumber} | From: ${callerNumber}`)
+    console.log(`📞 Call: ${callId} | To: ${toNumber} | From: ${callerNumber}`)
 
     if (!toNumber) {
-      console.log('❌ Missing toNumber, skipping')
       return res.status(200).json({ ignored: true })
     }
 
-    // ✅ Normalize helper (removes +, spaces, etc.)
+    // -------------------------
+    // Normalize phone numbers
+    // -------------------------
     const normalize = (n) => (n || '').replace(/\D/g, '')
     const toNorm = normalize(toNumber)
 
-    console.log('🔍 Looking up client for number:', toNumber)
-
-    // ⚠️ Fetch all active clients then match in JS (fixes multi-number issue)
+    // -------------------------
+    // Fetch clients
+    // -------------------------
     const { data: clients, error: clientError } = await supabase
       .from('clients')
       .select('*')
@@ -53,6 +52,9 @@ router.post('/', async (req, res) => {
       console.log('⚠️ Client lookup error:', clientError.message)
     }
 
+    // -------------------------
+    // Match client by ANY number format
+    // -------------------------
     const client = clients?.find(c => {
       const numbers = Array.isArray(c.bland_number)
         ? c.bland_number
@@ -62,7 +64,7 @@ router.post('/', async (req, res) => {
     })
 
     if (!client) {
-      console.log(`⚠️ No client found for ${toNumber}, saving orphan call`)
+      console.log(`⚠️ No client found for ${toNumber}`)
 
       await supabase.from('calls').insert({
         call_id: callId,
@@ -77,20 +79,22 @@ router.post('/', async (req, res) => {
       return res.status(200).json({ ok: true })
     }
 
-    console.log(`✅ Client found: ${client.business_name}`)
+    console.log(`✅ Client: ${client.business_name}`)
 
-    // ✅ Duplicate check (safe)
+    // -------------------------
+    // Prevent duplicates
+    // -------------------------
     const { data: existing } = await supabase
       .from('calls')
       .select('id')
       .eq('call_id', callId)
       .maybeSingle()
 
-    if (existing) {
-      console.log('⏭️ Already processed')
-      return res.status(200).json({ ok: true })
-    }
+    if (existing) return res.status(200).json({ ok: true })
 
+    // -------------------------
+    // Save call
+    // -------------------------
     await supabase.from('calls').insert({
       call_id: callId,
       client_id: client.id,
@@ -109,20 +113,26 @@ router.post('/', async (req, res) => {
       created_at: new Date().toISOString()
     }
 
-    // 📱 SMS
+    // -------------------------
+    // SMS alert
+    // -------------------------
     if (client.notify_sms) {
       console.log('📱 Sending SMS...')
       await sendSMS(client.notify_sms, buildSMSBody(client, callRecord))
     }
 
-    // 📧 Email
+    // -------------------------
+    // Email alert
+    // -------------------------
     if (client.notify_email) {
       console.log('📧 Sending email...')
       const subject = `📞 Missed Call — ${callerNumber} | ${client.business_name}`
       await sendEmail(client.notify_email, subject, buildCallSummaryEmail(client, callRecord))
     }
 
-    // 📅 Booking detection
+    // -------------------------
+    // Booking detection
+    // -------------------------
     const bookingKeywords = ['book', 'appointment', 'schedule', 'booking', 'reserve']
 
     const needsBooking = bookingKeywords.some(word =>
@@ -135,12 +145,12 @@ router.post('/', async (req, res) => {
       await sendSMS(callerNumber, callerSMS)
     }
 
-    console.log(`✅ Done processing call ${callId}`)
+    console.log(`✅ Done: ${callId}`)
 
     return res.status(200).json({ ok: true })
 
   } catch (error) {
-    console.error('❌ Webhook error:', error.message)
+    console.log('❌ Webhook error:', error.message)
     return res.status(500).json({ error: true })
   }
 })
