@@ -5,18 +5,21 @@ const { sendSMS } = require('../lib/sms')
 const { sendEmail, buildCallSummaryEmail } = require('../lib/email')
 
 router.post('/', async (req, res) => {
-  res.status(200).json({ received: true })
+  const payload = req.body
 
-  console.log('🔔 Bland webhook received')
+  console.log('🔔 Webhook received')
+  console.log('📦 Payload keys:', Object.keys(payload || {}))
 
   try {
-    const payload = req.body
-    console.log('📦 Payload keys:', Object.keys(payload))
+    // ✅ Ignore Bland log / noise events
+    const isLogEvent =
+      payload?.message &&
+      payload?.category &&
+      payload?.log_level
 
-    // ✅ Ignore Bland log / debug events
-    if (payload.message && payload.category) {
-      console.log('⏭️ Ignoring Bland log event')
-      return
+    if (isLogEvent || !payload?.call_id || !payload?.to) {
+      console.log('⏭️ Skipping non-call event')
+      return res.status(200).json({ ignored: true })
     }
 
     const callId = payload.call_id
@@ -27,29 +30,32 @@ router.post('/', async (req, res) => {
     const duration = payload.call_length || payload.duration || null
     const status = payload.status || 'completed'
 
+    console.log('🔥 REAL CALL EVENT:', {
+      callId,
+      toNumber,
+      status
+    })
+
     console.log(`📞 Call ID: ${callId} | To: ${toNumber} | From: ${callerNumber}`)
 
     if (!callId) {
       console.log('❌ No call_id, skipping')
-      return
+      return res.status(200).json({ ok: false })
     }
 
-    console.log('🔍 Checking for duplicate...')
-    const { data: existing, error: dupError } = await supabase
+    // ✅ Duplicate check (safe)
+    const { data: existing } = await supabase
       .from('calls')
       .select('id')
       .eq('call_id', callId)
       .maybeSingle()
 
-    if (dupError) console.log('⚠️ Duplicate check error:', dupError.message)
-
     if (existing) {
-      console.log(`⏭️ Already processed, skipping`)
-      return
+      console.log('⏭️ Already processed')
+      return res.status(200).json({ ok: true })
     }
 
-    console.log('🔍 Looking up client for number:', toNumber)
-
+    // ✅ Client lookup
     const { data: client, error: clientError } = await supabase
       .from('clients')
       .select('*')
@@ -57,7 +63,9 @@ router.post('/', async (req, res) => {
       .eq('active', true)
       .maybeSingle()
 
-    if (clientError) console.log('⚠️ Client lookup error:', clientError.message)
+    if (clientError) {
+      console.log('⚠️ Client lookup error:', clientError.message)
+    }
 
     if (!client) {
       console.log(`⚠️ No client found for ${toNumber}, saving orphan call`)
@@ -72,7 +80,7 @@ router.post('/', async (req, res) => {
         client_id: null
       })
 
-      return
+      return res.status(200).json({ ok: true })
     }
 
     console.log(`✅ Client found: ${client.business_name}`)
@@ -95,17 +103,20 @@ router.post('/', async (req, res) => {
       created_at: new Date().toISOString()
     }
 
+    // 📱 SMS
     if (client.notify_sms) {
-      console.log('📱 Sending owner SMS...')
+      console.log('📱 Sending SMS...')
       await sendSMS(client.notify_sms, buildSMSBody(client, callRecord))
     }
 
+    // 📧 Email
     if (client.notify_email) {
-      console.log('📧 Sending owner email...')
+      console.log('📧 Sending email...')
       const subject = `📞 Missed Call — ${callerNumber} | ${client.business_name}`
       await sendEmail(client.notify_email, subject, buildCallSummaryEmail(client, callRecord))
     }
 
+    // 📅 Booking detection
     const bookingKeywords = ['book', 'appointment', 'schedule', 'booking', 'reserve']
 
     const needsBooking = bookingKeywords.some(word =>
@@ -113,17 +124,18 @@ router.post('/', async (req, res) => {
     )
 
     if (needsBooking && client.booking_url) {
-      console.log('📅 Sending booking link to caller...')
-
-      const callerSMS = `Hi! Thanks for calling ${client.business_name}. Book your appointment here: ${client.booking_url}`
-
+      console.log('📅 Sending booking link...')
+      const callerSMS = `Hi! Thanks for calling ${client.business_name}. Book here: ${client.booking_url}`
       await sendSMS(callerNumber, callerSMS)
     }
 
-    console.log(`✅ Webhook processing complete for call ${callId}`)
+    console.log(`✅ Done processing call ${callId}`)
+
+    return res.status(200).json({ ok: true })
 
   } catch (error) {
     console.error('❌ Webhook error:', error.message)
+    return res.status(500).json({ error: true })
   }
 })
 
