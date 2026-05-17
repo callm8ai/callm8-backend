@@ -18,7 +18,7 @@ router.post('/', async (req, res) => {
     const duration = payload.call_length || payload.duration || null
     const status = payload.status || 'completed'
 
-    console.log(`📞 Call ID: ${callId} | To: ${toNumber} | From: ${callerNumber} | Status: ${status}`)
+    console.log(`📞 Call ID: ${callId} | To: ${toNumber} | From: ${callerNumber}`)
 
     if (!callId) {
       console.log('❌ No call_id, skipping')
@@ -34,7 +34,7 @@ router.post('/', async (req, res) => {
 
     if (dupError) console.log('⚠️ Duplicate check error:', dupError.message)
     if (existing) {
-      console.log(`⏭️ Call ${callId} already processed, skipping`)
+      console.log(`⏭️ Already processed, skipping`)
       return
     }
 
@@ -75,4 +75,50 @@ router.post('/', async (req, res) => {
     })
 
     const callRecord = {
-      c
+      call_id: callId,
+      caller_number: callerNumber,
+      summary,
+      duration,
+      created_at: new Date().toISOString()
+    }
+
+    if (client.notify_sms) {
+      console.log('📱 Sending owner SMS...')
+      await sendSMS(client.notify_sms, buildSMSBody(client, callRecord))
+    }
+
+    if (client.notify_email) {
+      console.log('📧 Sending owner email...')
+      const subject = `📞 Missed Call — ${callerNumber} | ${client.business_name}`
+      await sendEmail(client.notify_email, subject, buildCallSummaryEmail(client, callRecord))
+    }
+
+    const bookingKeywords = ['book', 'appointment', 'schedule', 'booking', 'reserve']
+    const needsBooking = bookingKeywords.some(word =>
+      ((summary || '') + ' ' + (transcript || '')).toLowerCase().includes(word)
+    )
+
+    if (needsBooking && client.booking_url) {
+      console.log('📅 Sending booking link to caller...')
+      const callerSMS = `Hi! Thanks for calling ${client.business_name}. Book your appointment here: ${client.booking_url}`
+      await sendSMS(callerNumber, callerSMS)
+    }
+
+    console.log(`✅ Webhook processing complete for call ${callId}`)
+
+  } catch (error) {
+    console.error('❌ Webhook error:', error.message)
+  }
+})
+
+function buildSMSBody(client, call) {
+  const duration = call.duration
+    ? `${Math.round(call.duration / 60)} min`
+    : 'Unknown'
+  const summary = call.summary
+    ? `\n\n${call.summary}`
+    : '\n\nNo summary captured.'
+  return `📞 CALLM8 — Missed Call\n📱 ${call.caller_number}\n⏱ ${duration}${summary}\n\n— Callm8`
+}
+
+module.exports = router
