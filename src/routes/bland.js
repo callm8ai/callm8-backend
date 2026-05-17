@@ -6,8 +6,10 @@ const { sendEmail, buildCallSummaryEmail } = require('../lib/email')
 
 router.post('/', async (req, res) => {
   res.status(200).json({ received: true })
+  console.log('🔔 Bland webhook received')
   try {
     const payload = req.body
+    console.log('📦 Payload keys:', Object.keys(payload))
     const callId = payload.call_id
     const callerNumber = payload.from || payload.caller || 'Unknown'
     const toNumber = payload.to || payload.inbound_number
@@ -16,23 +18,38 @@ router.post('/', async (req, res) => {
     const duration = payload.call_length || payload.duration || null
     const status = payload.status || 'completed'
 
-    if (!callId) return
+    console.log(`📞 Call ID: ${callId} | To: ${toNumber} | From: ${callerNumber} | Status: ${status}`)
 
-    const { data: existing } = await supabase
+    if (!callId) {
+      console.log('❌ No call_id, skipping')
+      return
+    }
+
+    console.log('🔍 Checking for duplicate...')
+    const { data: existing, error: dupError } = await supabase
       .from('calls')
       .select('id')
       .eq('call_id', callId)
       .single()
-    if (existing) return
 
-    const { data: client } = await supabase
+    if (dupError) console.log('⚠️ Duplicate check error:', dupError.message)
+    if (existing) {
+      console.log(`⏭️ Call ${callId} already processed, skipping`)
+      return
+    }
+
+    console.log('🔍 Looking up client for number:', toNumber)
+    const { data: client, error: clientError } = await supabase
       .from('clients')
       .select('*')
       .eq('bland_number', toNumber)
       .eq('active', true)
       .single()
 
+    if (clientError) console.log('⚠️ Client lookup error:', clientError.message)
+
     if (!client) {
+      console.log(`⚠️ No client found for ${toNumber}, saving orphan call`)
       await supabase.from('calls').insert({
         call_id: callId,
         caller_number: callerNumber,
@@ -45,6 +62,8 @@ router.post('/', async (req, res) => {
       return
     }
 
+    console.log(`✅ Client found: ${client.business_name}`)
+
     await supabase.from('calls').insert({
       call_id: callId,
       client_id: client.id,
@@ -56,46 +75,4 @@ router.post('/', async (req, res) => {
     })
 
     const callRecord = {
-      call_id: callId,
-      caller_number: callerNumber,
-      summary,
-      duration,
-      created_at: new Date().toISOString()
-    }
-
-    if (client.notify_sms) {
-      await sendSMS(client.notify_sms, buildSMSBody(client, callRecord))
-    }
-
-    if (client.notify_email) {
-      const subject = `📞 Missed Call — ${callerNumber} | ${client.business_name}`
-      await sendEmail(client.notify_email, subject, buildCallSummaryEmail(client, callRecord))
-    }
-
-    // Send booking link to caller if needed
-    const bookingKeywords = ['book', 'appointment', 'schedule', 'booking', 'reserve']
-    const needsBooking = bookingKeywords.some(word =>
-      ((summary || '') + ' ' + (transcript || '')).toLowerCase().includes(word)
-    )
-
-    if (needsBooking && client.booking_url) {
-      const callerSMS = `Hi! Thanks for calling ${client.business_name}. Book your appointment here: ${client.booking_url}`
-      await sendSMS(callerNumber, callerSMS)
-    }
-
-  } catch (error) {
-    console.error('Webhook error:', error.message)
-  }
-})
-
-function buildSMSBody(client, call) {
-  const duration = call.duration
-    ? `${Math.round(call.duration / 60)} min`
-    : 'Unknown'
-  const summary = call.summary
-    ? `\n\n${call.summary}`
-    : '\n\nNo summary captured.'
-  return `📞 CALLM8 — Missed Call\n📱 ${call.caller_number}\n⏱ ${duration}${summary}\n\n— Callm8`
-}
-
-module.exports = router
+      c
