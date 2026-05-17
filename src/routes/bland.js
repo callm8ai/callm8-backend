@@ -51,7 +51,15 @@ router.post('/', async (req, res) => {
     if (clientError) {
       console.log('⚠️ Client lookup error:', clientError.message)
     }
+const { data: clients, error: clientError } = await supabase
+  .from('clients')
+  .select('*')
+  .eq('active', true)
 
+// ADD THIS TEMPORARILY
+console.log('🔍 DB clients:', JSON.stringify(clients))
+console.log('🔍 toNorm:', toNorm)
+console.log('🔍 toNumber raw:', toNumber)
     // -------------------------
     // Match client by ANY number format
     // -------------------------
