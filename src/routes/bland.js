@@ -11,13 +11,13 @@ router.post('/', async (req, res) => {
   console.log('📦 Payload keys:', Object.keys(payload || {}))
 
   try {
-    // ✅ Ignore Bland log / noise events
+    // ✅ Ignore Bland log events
     const isLogEvent =
       payload?.message &&
       payload?.category &&
       payload?.log_level
 
-    if (isLogEvent || !payload?.call_id || !payload?.to) {
+    if (isLogEvent || !payload?.call_id) {
       console.log('⏭️ Skipping non-call event')
       return res.status(200).json({ ignored: true })
     }
@@ -30,42 +30,36 @@ router.post('/', async (req, res) => {
     const duration = payload.call_length || payload.duration || null
     const status = payload.status || 'completed'
 
-    console.log('🔥 REAL CALL EVENT:', {
-      callId,
-      toNumber,
-      status
-    })
-
     console.log(`📞 Call ID: ${callId} | To: ${toNumber} | From: ${callerNumber}`)
 
-    if (!callId) {
-      console.log('❌ No call_id, skipping')
-      return res.status(200).json({ ok: false })
+    if (!toNumber) {
+      console.log('❌ Missing toNumber, skipping')
+      return res.status(200).json({ ignored: true })
     }
 
-    // ✅ Duplicate check (safe)
-    const { data: existing } = await supabase
-      .from('calls')
-      .select('id')
-      .eq('call_id', callId)
-      .maybeSingle()
+    // ✅ Normalize helper (removes +, spaces, etc.)
+    const normalize = (n) => (n || '').replace(/\D/g, '')
+    const toNorm = normalize(toNumber)
 
-    if (existing) {
-      console.log('⏭️ Already processed')
-      return res.status(200).json({ ok: true })
-    }
+    console.log('🔍 Looking up client for number:', toNumber)
 
-    // ✅ Client lookup
-    const { data: client, error: clientError } = await supabase
+    // ⚠️ Fetch all active clients then match in JS (fixes multi-number issue)
+    const { data: clients, error: clientError } = await supabase
       .from('clients')
       .select('*')
-      .eq('bland_number', toNumber)
       .eq('active', true)
-      .maybeSingle()
 
     if (clientError) {
       console.log('⚠️ Client lookup error:', clientError.message)
     }
+
+    const client = clients?.find(c => {
+      const numbers = Array.isArray(c.bland_number)
+        ? c.bland_number
+        : [c.bland_number]
+
+      return numbers.some(n => normalize(n) === toNorm)
+    })
 
     if (!client) {
       console.log(`⚠️ No client found for ${toNumber}, saving orphan call`)
@@ -84,6 +78,18 @@ router.post('/', async (req, res) => {
     }
 
     console.log(`✅ Client found: ${client.business_name}`)
+
+    // ✅ Duplicate check (safe)
+    const { data: existing } = await supabase
+      .from('calls')
+      .select('id')
+      .eq('call_id', callId)
+      .maybeSingle()
+
+    if (existing) {
+      console.log('⏭️ Already processed')
+      return res.status(200).json({ ok: true })
+    }
 
     await supabase.from('calls').insert({
       call_id: callId,
