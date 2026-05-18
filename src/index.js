@@ -1,7 +1,7 @@
 require('dotenv').config()
 const express = require('express')
 const app = express()
-app.use(express.static('.'))
+
 // Parse JSON for all routes except Stripe webhook
 app.use((req, res, next) => {
   if (req.path === '/webhooks/stripe') {
