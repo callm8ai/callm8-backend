@@ -3,7 +3,6 @@ const router = express.Router()
 const supabase = require('../lib/supabase')
 const { sendSMS } = require('../lib/sms')
 
-// Simple API key auth for admin routes
 const requireAdminKey = (req, res, next) => {
   const key = req.headers['x-admin-key']
   if (key !== process.env.ADMIN_API_KEY) {
@@ -18,7 +17,6 @@ router.get('/clients', requireAdminKey, async (req, res) => {
     .from('clients')
     .select('id, business_name, bland_number, notify_sms, notify_email, plan, active, created_at')
     .order('created_at', { ascending: false })
-
   if (error) return res.status(500).json({ error })
   res.json({ clients: data })
 })
@@ -31,7 +29,6 @@ router.get('/clients/:id/calls', requireAdminKey, async (req, res) => {
     .eq('client_id', req.params.id)
     .order('created_at', { ascending: false })
     .limit(50)
-
   if (error) return res.status(500).json({ error })
   res.json({ calls: data })
 })
@@ -52,7 +49,6 @@ router.post('/clients', requireAdminKey, async (req, res) => {
   }
 
   try {
-    // Save client to Supabase
     const { data: client, error } = await supabase
       .from('clients')
       .insert({
@@ -72,18 +68,12 @@ router.post('/clients', requireAdminKey, async (req, res) => {
       return res.status(500).json({ error: 'Failed to save client', details: error })
     }
 
-    // Send welcome SMS
     await sendSMS(
       owner_mobile,
       `Welcome to Callm8! We're now handling your missed calls. — Callm8`
     )
 
-    res.json({
-      success: true,
-      client,
-      message: 'Client created successfully'
-    })
-
+    res.json({ success: true, client, message: 'Client created successfully' })
   } catch (err) {
     console.error('Client creation error:', err)
     res.status(500).json({ error: err.message })
@@ -98,7 +88,6 @@ router.patch('/clients/:id', requireAdminKey, async (req, res) => {
     .eq('id', req.params.id)
     .select()
     .single()
-
   if (error) return res.status(500).json({ error })
   res.json({ client: data })
 })
@@ -109,7 +98,6 @@ router.delete('/clients/:id', requireAdminKey, async (req, res) => {
     .from('clients')
     .update({ active: false })
     .eq('id', req.params.id)
-
   if (error) return res.status(500).json({ error })
   res.json({ success: true, message: 'Client deactivated' })
 })
@@ -121,9 +109,29 @@ router.get('/calls', requireAdminKey, async (req, res) => {
     .select('*, clients(business_name)')
     .order('created_at', { ascending: false })
     .limit(100)
-
   if (error) return res.status(500).json({ error })
   res.json({ calls: data })
+})
+
+// POST send test onboarding email
+router.post('/test-email', requireAdminKey, async (req, res) => {
+  const { email, business_name } = req.body
+  if (!email || !business_name) {
+    return res.status(400).json({ error: 'email and business_name are required' })
+  }
+  const { sendEmail } = require('../lib/email')
+  const { buildSetupEmail } = require('./stripe')
+  try {
+    await sendEmail(
+      email,
+      'Your Callm8 receptionist is being set up now',
+      buildSetupEmail(business_name),
+      'hello@callm8.ai'
+    )
+    res.json({ success: true, message: `Email sent to ${email}` })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 module.exports = router
