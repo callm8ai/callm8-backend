@@ -391,4 +391,5 @@ function buildWelcomeEmail(businessName, blandNumber, plan) {
 }
 
 router.buildSetupEmail = buildSetupEmail
+router.buildWelcomeEmail = buildWelcomeEmail
 module.exports = router
