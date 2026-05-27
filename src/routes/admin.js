@@ -134,4 +134,24 @@ router.post('/test-email', requireAdminKey, async (req, res) => {
   }
 })
 
+// POST send test welcome email (with phone number)
+router.post('/test-welcome-email', requireAdminKey, async (req, res) => {
+  const { email, business_name, bland_number, plan } = req.body
+  if (!email || !business_name || !bland_number) {
+    return res.status(400).json({ error: 'email, business_name and bland_number are required' })
+  }
+  const { sendEmail } = require('../lib/email')
+  const { buildWelcomeEmail } = require('./stripe')
+  try {
+    await sendEmail(
+      email,
+      `You're live — your Callm8 number is ${bland_number}`,
+      buildWelcomeEmail(business_name, bland_number, plan || 'starter')
+    )
+    res.json({ success: true, message: `Welcome email sent to ${email}` })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 module.exports = router
